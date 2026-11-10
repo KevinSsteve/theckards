@@ -67,3 +67,13 @@ describe("guest route contract", () => {
     }
   });
 });
+
+describe("redirect contract", () => {
+  it("never builds redirects from request.url (container host behind the load balancer)", async () => {
+    const root = path.resolve(process.cwd(), "src/app");
+    for (const file of await routeFiles(root)) {
+      const source = await readFile(file, "utf8");
+      expect(source, file).not.toMatch(/Response\.redirect\(new URL\([^)]*request\.url/);
+    }
+  });
+});

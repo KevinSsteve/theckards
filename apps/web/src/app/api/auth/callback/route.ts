@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { exchangeAuthorizationCode, groupsFromClaims, hasConfiguredTotp, readAuthTransaction } from "../../../../server/auth/cognito";
 import { ADMIN_COOKIE, AUTH_TRANSACTION_COOKIE, CSRF_COOKIE, USER_COOKIE, csrfCookie, secureCookie } from "../../../../server/auth/cookies";
 import { createSession, isAllowedAdmin, upsertUser } from "../../../../server/auth/session-store";
+import { env } from "../../../../server/env";
 import { ProblemError } from "../../../../server/http/problem";
 import { withRoute } from "../../../../server/http/with-route";
 
@@ -36,12 +37,13 @@ export const GET = withRoute(
       const session = await createSession(identity, kind);
       jar.set(kind === "ADMIN" ? ADMIN_COOKIE : USER_COOKIE, session.token, { ...secureCookie, expires: session.absoluteExpiresAt });
       jar.set(CSRF_COOKIE, session.csrf, { ...csrfCookie, expires: session.absoluteExpiresAt });
-      return Response.redirect(new URL(mfaReady ? "/admin" : "/admin/mfa", request.url), 302);
+      return Response.redirect(new URL(mfaReady ? "/admin" : "/admin/mfa", env().APP_BASE_URL), 302);
     }
 
     const session = await createSession(identity, "USER");
     jar.set(USER_COOKIE, session.token, { ...secureCookie, expires: session.absoluteExpiresAt });
     jar.set(CSRF_COOKIE, session.csrf, { ...csrfCookie, expires: session.absoluteExpiresAt });
-    return Response.redirect(new URL("/account", request.url), 302);
+    // Behind CloudFront/ALB, request.url carries the container host (0.0.0.0:3000); always redirect to the public origin.
+    return Response.redirect(new URL("/account", env().APP_BASE_URL), 302);
   },
 );

@@ -1,10 +1,15 @@
 import { hmac } from "./crypto";
 import { getPool } from "./db";
 
+/**
+ * Client IP behind CloudFront -> ALB. Clients can prepend arbitrary X-Forwarded-For entries; CloudFront appends the
+ * real viewer IP and the ALB then appends the CloudFront edge IP, so the trustworthy viewer entry is second-to-last.
+ */
 export function requestAddress(request: Request): string {
-  return request.headers.get("cloudfront-viewer-address")?.split(":")[0]
-    ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-    ?? "unknown";
+  const viewer = request.headers.get("cloudfront-viewer-address");
+  if (viewer) return viewer.replace(/:\d+$/, "").replace(/^\[|\]$/g, "");
+  const chain = (request.headers.get("x-forwarded-for") ?? "").split(",").map((part) => part.trim()).filter(Boolean);
+  return chain.length >= 2 ? chain[chain.length - 2]! : chain[0] ?? "unknown";
 }
 
 export async function enforceRateLimit(scope: string, subject: string, limit: number, windowSeconds: number): Promise<void> {
