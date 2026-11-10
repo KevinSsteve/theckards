@@ -110,6 +110,30 @@ describe("in-person route contract", () => {
   });
 });
 
+describe("public verification route contract", () => {
+  it("is public, rate-limited, briefly cached and receives only a hash", async () => {
+    const route = await readFile(path.resolve(process.cwd(), "src/app/api/public/verify/[sha256]/route.ts"), "utf8");
+    expect(route).toMatch(/auth:\s*"public"/);
+    expect(route).toContain("rateLimit:");
+    expect(route).toContain('cacheControl: "public, max-age=60"');
+    expect(route).not.toContain("request.body");
+    const client = await readFile(path.resolve(process.cwd(), "src/app/verify/VerifyRecord.tsx"), "utf8");
+    expect(client).toContain("hashFileLocally(file)");
+    expect(client).not.toContain("FormData");
+  });
+});
+
+describe("admin legal workflow contract", () => {
+  it("uses server-equivalent blockers, explicit error state and forced reauthentication", async () => {
+    const dashboard = await readFile(path.resolve(process.cwd(), "src/app/admin/AdminDashboard.tsx"), "utf8");
+    expect(dashboard).toContain("legalDocumentApprovalBlockers");
+    expect(dashboard).toContain('kind: "success" | "error"');
+    expect(dashboard).toContain("/api/auth/login?intent=admin&fresh=1");
+    const login = await readFile(path.resolve(process.cwd(), "src/app/api/auth/login/route.ts"), "utf8");
+    expect(login).toContain('url.searchParams.get("fresh") === "1"');
+  });
+});
+
 describe("redirect contract", () => {
   it("never builds redirects from request.url (container host behind the load balancer)", async () => {
     const root = path.resolve(process.cwd(), "src/app");

@@ -52,7 +52,7 @@ export function AgreementActions(props: AgreementActionsProps) {
       <p>You: {props.creatorSignedAt ? <>signed as <strong>{props.creatorSignedName}</strong> on {new Date(props.creatorSignedAt).toUTCString()}</> : "not signed yet"}</p>
       <p>Other party: {props.counterpartySignedAt ? <>signed as <strong>{props.counterpartySignedName}</strong> on {new Date(props.counterpartySignedAt).toUTCString()}</> : "not signed yet"}</p>
       {waitingForSeal && <p aria-live="polite">Both parties signed. The sealed record is being generated…</p>}
-      {props.finalSealId && <p><a className="button" href={`/api/agreements/${id}/documents/final`}>Download sealed PDF</a> <span className="muted">Seal ID {props.finalSealId}</span></p>}
+      {props.finalSealId && <p className="actions"><a className="button" href={`/api/agreements/${id}/documents/final`}>Download sealed PDF</a><a className="button secondary" href={`/api/agreements/${id}/documents/final/receipt`}>Download receipt</a><span className="muted">Seal ID {props.finalSealId}</span></p>}
     </section>
     {canSign && <CreatorSignForm id={id} lockVersion={lockVersion} />}
     {canShowQr && <InPersonPanel id={id} lockVersion={lockVersion} />}

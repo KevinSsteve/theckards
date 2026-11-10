@@ -291,6 +291,16 @@ paths:
       responses:
         '200': { description: Sealed PDF }
         '404': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/documents/final/receipt:
+    get:
+      summary: Download the machine-readable receipt for the sealed final PDF
+      operationId: downloadFinalReceipt
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+      responses:
+        '200': { description: ECDSA-signed receipt JSON }
+        '404': { $ref: '#/components/responses/Problem' }
   /api/guest/{token}/otp:
     post:
       summary: Email the invited counterparty a 6-digit code (409 while EMAIL_DELIVERY_ENABLED is off)
@@ -320,6 +330,36 @@ paths:
       responses:
         '200': { description: Sealed PDF }
         '404': { $ref: '#/components/responses/Problem' }
+  /api/guest/documents/final/receipt:
+    get:
+      summary: Download the machine-readable receipt for the guest's sealed PDF
+      operationId: downloadGuestFinalReceipt
+      security: [{ guestSession: [] }]
+      responses:
+        '200': { description: ECDSA-signed receipt JSON }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/public/verify/{sha256}:
+    get:
+      summary: Verify a SHA-256 against public seal metadata; malformed and unknown hashes return the same false response
+      operationId: verifyPublicSeal
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Sha256'
+      responses:
+        '200':
+          description: Public verification result, cached for 60 seconds
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [valid, kind, sealed_at, seal_id, anchored]
+                properties:
+                  valid: { type: boolean }
+                  kind: { type: [string, 'null'], enum: [FINAL, ADDENDUM, DOSSIER, null] }
+                  sealed_at: { type: [string, 'null'], format: date-time }
+                  seal_id: { type: [string, 'null'], format: uuid }
+                  anchored: { type: boolean }
+        '429': { $ref: '#/components/responses/Problem' }
   /.well-known/theckards-keys.json:
     get:
       summary: Public seal verification keys (old keys are never removed)
@@ -400,6 +440,12 @@ components:
       in: cookie
       name: __Host-theckards_guest_session
   parameters:
+    Sha256:
+      name: sha256
+      in: path
+      required: true
+      description: A candidate digest. Malformed values receive the same response as unknown digests.
+      schema: { type: string }
     AgreementId:
       name: id
       in: path

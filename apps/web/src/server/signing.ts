@@ -1,4 +1,4 @@
-import { REQUIRED_LEGAL_DOCUMENTS, renderAgreement, transition, type AgreementState, type TemplateId } from "@theckards/domain";
+import { REQUIRED_LEGAL_DOCUMENTS, renderAgreement, transition, type AgreementState, type SealedReceipt, type TemplateId } from "@theckards/domain";
 import type pg from "pg";
 import { createGuestSession } from "./auth/session-store";
 import { encryptText, hmac } from "./crypto";
@@ -281,4 +281,15 @@ export async function finalDocumentFor(agreementId: string): Promise<{ id: strin
   `, [agreementId]);
   const row = result.rows[0];
   return row ? { id: row.id, s3Key: row.s3_key, sha256: row.sha256 } : null;
+}
+
+/** Machine-readable sidecar used for independent offline verification. */
+export async function finalReceiptFor(agreementId: string): Promise<SealedReceipt | null> {
+  const result = await getPool().query<{ receipt: SealedReceipt }>(`
+    SELECT d.receipt FROM sealed_documents d
+    JOIN agreements a ON a.id = d.agreement_id
+    JOIN agreement_versions v ON v.id = d.version_id AND v.number = a.current_version_number
+    WHERE d.agreement_id = $1 AND d.kind = 'FINAL'
+  `, [agreementId]);
+  return result.rows[0]?.receipt ?? null;
 }

@@ -155,7 +155,7 @@ export function renderAgreement(templateId: TemplateId, fields: unknown): Agreem
 export const CreateAgreementSchema = z.object({
   templateId: TemplateIdSchema,
   title: z.string().trim().min(3).max(120),
-  fields: z.record(z.unknown()),
+  fields: z.record(z.string(), z.unknown()),
   dueAt: z.string().datetime({ offset: true }).nullable().optional(),
 });
 

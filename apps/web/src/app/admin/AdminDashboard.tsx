@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { legalApprovalBlockers } from "@theckards/domain";
+import { legalDocumentApprovalBlockers, type LegalDocumentType } from "@theckards/domain";
 
 interface Setting {
   key: string;
@@ -14,7 +14,7 @@ interface Setting {
 
 interface LegalDocument {
   id: string;
-  documentType: string;
+  documentType: LegalDocumentType;
   locale: string;
   version: number;
   status: string;
@@ -57,38 +57,90 @@ function LegalCard({ initial, editable }: { initial: LegalDocument; editable: bo
   const [document, setDocument] = useState(initial);
   const [title, setTitle] = useState(initial.title);
   const [bodyMd, setBodyMd] = useState(initial.bodyMd);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const isDraft = document.status === "DRAFT";
-  const blockers = isDraft ? legalApprovalBlockers(bodyMd) : [];
+  const dirty = title !== document.title || bodyMd !== document.bodyMd;
+  const blockers = isDraft ? legalDocumentApprovalBlockers(document.documentType, bodyMd) : [];
+
+  async function responseDetail(response: Response, fallback: string): Promise<string> {
+    try {
+      const result = await response.json() as { detail?: string };
+      return result.detail ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
   async function save() {
-    setBusy(true); setMessage("");
-    const response = await fetch(`/api/admin/legal/${document.id}`, { method: "PATCH", headers: { "content-type": "application/json", "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ title, bodyMd }) });
-    const result = await response.json() as { detail?: string };
-    setMessage(response.ok ? "Draft saved." : (result.detail ?? "Save failed.")); setBusy(false);
+    setBusy(true); setMessage(null);
+    try {
+      const response = await fetch(`/api/admin/legal/${document.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() },
+        body: JSON.stringify({ title, bodyMd }),
+      });
+      if (!response.ok) {
+        setMessage({ kind: "error", text: await responseDetail(response, "The draft could not be saved.") });
+        return;
+      }
+      setDocument({ ...document, title, bodyMd });
+      setMessage({ kind: "success", text: "Draft saved." });
+    } catch {
+      setMessage({ kind: "error", text: "The draft could not be saved. Check your connection and try again." });
+    } finally {
+      setBusy(false);
+    }
   }
+
   async function approve() {
+    if (dirty) {
+      setMessage({ kind: "error", text: "Save your changes before approving this document." });
+      return;
+    }
     if (!window.confirm("Approve this exact legal text for production? Approved content is immutable.")) return;
-    setBusy(true); setMessage("");
-    const response = await fetch(`/api/admin/legal/${document.id}/approve`, { method: "POST", headers: { "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() } });
-    const result = await response.json() as { detail?: string };
-    if (response.ok) { setDocument({ ...document, status: "APPROVED" }); setMessage("Approved for production."); }
-    else setMessage(result.detail ?? "Approval failed.");
-    setBusy(false);
+    setBusy(true); setMessage(null);
+    try {
+      const response = await fetch(`/api/admin/legal/${document.id}/approve`, {
+        method: "POST",
+        headers: { "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() },
+      });
+      if (!response.ok) {
+        setMessage({ kind: "error", text: await responseDetail(response, "The document could not be approved.") });
+        return;
+      }
+      setDocument({ ...document, status: "APPROVED" });
+      setMessage({ kind: "success", text: "Approved for production." });
+    } catch {
+      setMessage({ kind: "error", text: "The document could not be approved. Check your connection and try again." });
+    } finally {
+      setBusy(false);
+    }
   }
-  return <article className="card">
+
+  const needsReauthentication = message?.kind === "error" && /sign in again|reauthentication/i.test(message.text);
+  return <article className="card" id={`legal-${document.documentType.toLowerCase()}-v${document.version}`}>
     <div className="actions"><strong>{document.documentType}</strong><span className="muted">v{document.version} · {document.status}</span></div>
     <label>Title<input value={title} disabled={!editable || !isDraft || busy} onChange={(event) => setTitle(event.target.value)} /></label>
     <label>Markdown<textarea value={bodyMd} disabled={!editable || !isDraft || busy} onChange={(event) => setBodyMd(event.target.value)} /></label>
-    {message && <p role="status" className={message.includes("failed") ? "error" : "success"}>{message}</p>}
+    {message && <p role="status" className={message.kind}>{message.text}</p>}
+    {needsReauthentication && <p><a className="button secondary" href="/api/auth/login?intent=admin&fresh=1">Sign in again to approve</a></p>}
+    {!editable && isDraft && <p className="notice">Only the product owner can edit and approve this draft.</p>}
+    {dirty && isDraft && <p className="muted">You have unsaved changes. Save the draft before approval.</p>}
     {blockers.length > 0 && <div className="notice"><strong>Complete before approving:</strong><ul>{blockers.map((b) => <li key={b}>{b}</li>)}</ul><span className="muted">Edit the text above, save the draft, then approve.</span></div>}
     {isDraft
-      ? <div className="actions"><button className="secondary" disabled={!editable || busy} onClick={save}>Save draft</button><button disabled={!editable || busy || blockers.length > 0} onClick={approve}>Approve</button></div>
+      ? <div className="actions"><button className="secondary" disabled={!editable || busy || !dirty} onClick={save}>Save draft</button><button disabled={!editable || busy || dirty || blockers.length > 0} onClick={approve}>Approve</button></div>
       : <button className="secondary" disabled={!editable || busy} onClick={async () => {
-          setBusy(true); setMessage("");
-          const response = await fetch("/api/admin/legal", { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ documentType: document.documentType, locale: document.locale, title, bodyMd }) });
-          const result = await response.json() as { detail?: string };
-          setMessage(response.ok ? "Next draft created. Reload to edit it." : (result.detail ?? "Draft creation failed.")); setBusy(false);
+          setBusy(true); setMessage(null);
+          try {
+            const response = await fetch("/api/admin/legal", { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ documentType: document.documentType, locale: document.locale, title, bodyMd }) });
+            if (response.ok) setMessage({ kind: "success", text: "Next draft created. Reload to edit it." });
+            else setMessage({ kind: "error", text: await responseDetail(response, "The next draft could not be created.") });
+          } catch {
+            setMessage({ kind: "error", text: "The next draft could not be created. Check your connection and try again." });
+          } finally {
+            setBusy(false);
+          }
         }}>Create next draft</button>}
   </article>;
 }
@@ -111,7 +163,7 @@ export function AdminDashboard({ settings, documents, events, role }: { settings
         </div>
       </>}
       {section === "settings" && <><h1>Settings</h1><p className="muted">Validated, versioned and audited. Sensitive changes require a login less than five minutes old.</p>{settings.map((setting) => <SettingCard key={setting.key} initial={setting} editable={editable} />)}</>}
-      {section === "legal" && <><h1>Legal documents</h1><p className="notice">Approval is a production action. Review the full text with qualified counsel before approval.</p>{documents.map((document) => <LegalCard key={document.id} initial={document} editable={editable} />)}</>}
+      {section === "legal" && <><h1>Legal documents</h1><p className="notice">Approval is a production action. Review the full text with qualified counsel before approval. Approval requires a sign-in less than five minutes old; if it expires, use the reauthentication link shown on the document.</p>{documents.map((document) => <LegalCard key={document.id} initial={document} editable={editable} />)}</>}
       {section === "audit" && <><h1>Audit log</h1><pre className="card audit">{JSON.stringify(events, null, 2)}</pre></>}
     </div>
   </div>;

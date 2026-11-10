@@ -10,7 +10,7 @@ export function GuestActions({ token, usable, askEmail, signedAt, state, finalAv
       <h2>You signed this agreement</h2>
       <p>Signed on {new Date(signedAt).toUTCString()}.</p>
       {state === "EXECUTED" && !finalAvailable && <p className="muted">Both parties signed. The sealed record will be emailed to you.</p>}
-      {finalAvailable && <a className="button" href="/api/guest/documents/final">Download sealed PDF</a>}
+      {finalAvailable && <p className="actions"><a className="button" href="/api/guest/documents/final">Download sealed PDF</a><a className="button secondary" href="/api/guest/documents/final/receipt">Download receipt</a></p>}
     </section>;
   }
   if (state === "REVISION_REQUESTED") {

@@ -59,7 +59,7 @@ export function InPersonSigner({ token, initial, hasDownloadSession }: { token: 
       <h2>Signed by both parties</h2>
       {!view.sealed && <p aria-live="polite">The sealed record is being generated…</p>}
       {view.sealed && downloadable && <>
-        <p><a className="button" href="/api/guest/documents/final">Download sealed PDF</a></p>
+        <p className="actions"><a className="button" href="/api/guest/documents/final">Download sealed PDF</a><a className="button secondary" href="/api/guest/documents/final/receipt">Download receipt</a></p>
         <p className="muted">Save it now: without an account you can download it only on this device, for about 2 hours. Anyone can later check that a copy is unchanged on the verification page.</p>
       </>}
       {view.sealed && !downloadable && view.downloadReady && <button type="button" disabled={busy} onClick={claimDownload}>Get the sealed PDF</button>}

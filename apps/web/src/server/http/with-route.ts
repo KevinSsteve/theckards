@@ -17,6 +17,8 @@ export interface RouteOptions<TSchema extends z.ZodTypeAny | undefined = undefin
   csrf?: boolean;
   ownerOnly?: boolean;
   idempotent?: string;
+  /** Overrides the safe no-store default for explicitly public, non-sensitive GET responses. */
+  cacheControl?: string;
 }
 
 export interface RouteInvocation<TBody = unknown> {
@@ -96,7 +98,7 @@ export function withRoute<TSchema extends z.ZodTypeAny | undefined = undefined>(
       }
       const headers = new Headers(response.headers);
       headers.set("x-request-id", requestId);
-      headers.set("cache-control", "no-store");
+      headers.set("cache-control", options.cacheControl ?? "no-store");
       return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
     } catch (error) {
       if (error instanceof Error && error.message === "Rate limit exceeded") return problemResponse(new ProblemError(429, "Too Many Requests", "Try again later."), requestId);

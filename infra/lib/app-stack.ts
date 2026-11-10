@@ -467,6 +467,9 @@ export class AppStack extends cdk.Stack {
         managed("AWSManagedRulesCommonRuleSet", 20),
         managed("AWSManagedRulesKnownBadInputsRuleSet", 30),
         managed("AWSManagedRulesSQLiRuleSet", 40),
+        { name: "RateLimitPublicVerify", priority: 4, action: { block: {} }, visibilityConfig: vis("RateLimitPublicVerify"),
+          statement: { rateBasedStatement: { limit: 300, aggregateKeyType: "IP", evaluationWindowSec: 300,
+            scopeDownStatement: { byteMatchStatement: { searchString: "/api/public/verify/", fieldToMatch: { uriPath: {} }, positionalConstraint: "STARTS_WITH", textTransformations: [{ priority: 0, type: "LOWERCASE" }] } } } } },
         { name: "RateLimitOtp", priority: 5, action: { block: {} }, visibilityConfig: vis("RateLimitOtp"),
           statement: { rateBasedStatement: { limit: 50, aggregateKeyType: "IP", evaluationWindowSec: 300,
             scopeDownStatement: { byteMatchStatement: { searchString: "/otp", fieldToMatch: { uriPath: {} }, positionalConstraint: "CONTAINS", textTransformations: [{ priority: 0, type: "LOWERCASE" }] } } } } },
@@ -489,6 +492,16 @@ export class AppStack extends cdk.Stack {
         originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER, compress: true,
       },
       additionalBehaviors: {
+        "/api/public/verify/*": {
+          origin: albOrigin, viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS, cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER, compress: true,
+        },
+        "/.well-known/theckards-keys.json": {
+          origin: albOrigin, viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS, cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER, compress: true,
+        },
         "/_next/static/*": {
           origin: albOrigin, viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD, cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,

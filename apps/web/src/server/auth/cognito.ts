@@ -36,7 +36,7 @@ function issuer(): string {
   return `https://cognito-idp.${env().AWS_REGION}.amazonaws.com/${env().USER_POOL_ID}`;
 }
 
-export function beginAuthorization(intent: AuthIntent): { url: string; transaction: string } {
+export function beginAuthorization(intent: AuthIntent, forceLogin = false): { url: string; transaction: string } {
   const transaction: AuthTransaction = {
     state: randomToken(),
     nonce: randomToken(),
@@ -55,6 +55,8 @@ export function beginAuthorization(intent: AuthIntent): { url: string; transacti
   url.searchParams.set("nonce", transaction.nonce);
   url.searchParams.set("code_challenge", challenge);
   url.searchParams.set("code_challenge_method", "S256");
+  // Sensitive Admin actions require auth_time < 5 minutes. Force Cognito to challenge an existing SSO session.
+  if (forceLogin) url.searchParams.set("prompt", "login");
   return { url: url.toString(), transaction: signPayload(transaction) };
 }
 
