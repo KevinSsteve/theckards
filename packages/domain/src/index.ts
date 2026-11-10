@@ -5,3 +5,4 @@ export * from "./legal.js";
 export * from "./settings.js";
 export * from "./canonical.js";
 export * from "./templates.js";
+export * from "./receipt.js";

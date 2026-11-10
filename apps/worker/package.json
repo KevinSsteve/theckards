@@ -19,10 +19,12 @@
     "@theckards/database": "workspace:*",
     "@theckards/domain": "workspace:*",
     "pdf-lib": "^1.17.1",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/pg": "^8.23.1"
+    "@types/pg": "^8.23.1",
+    "@types/qrcode": "^1.5.6"
   }
 }

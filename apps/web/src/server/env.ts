@@ -12,6 +12,7 @@ const EnvSchema = z.object({
   DB_PASSWORD: z.string().min(1),
   DOCUMENTS_BUCKET: z.string().min(3),
   DATA_KEY_ARN: z.string().startsWith("arn:"),
+  SEAL_KEY_ARN: z.string().startsWith("arn:"),
   AUTH_HMAC_SECRET: z.string().min(32),
   EMAIL_HASH_SECRET: z.string().min(32),
   USER_POOL_ID: z.string().min(1),

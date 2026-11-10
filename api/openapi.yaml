@@ -136,6 +136,77 @@ paths:
       responses:
         '200': { description: Private PDF preview }
         '404': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/otp:
+    post:
+      summary: Email the creator a 6-digit signing code
+      operationId: requestCreatorSigningCode
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202': { description: Code emailed }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/sign:
+    post:
+      summary: Sign the current version with typed name, ESIGN consent and email code
+      operationId: signAgreementAsCreator
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Signature recorded; agreement executed when both parties signed the same hash }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/documents/final:
+    get:
+      summary: Download the sealed final PDF
+      operationId: downloadFinalDocument
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+      responses:
+        '200': { description: Sealed PDF }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/guest/{token}/otp:
+    post:
+      summary: Email the invited counterparty a 6-digit code
+      operationId: requestGuestCode
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/InviteToken'
+      responses:
+        '202': { description: Code emailed }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/guest/{token}/complete:
+    post:
+      summary: Verify the code and sign or request changes; consumes the invitation and opens a 2-hour guest session
+      operationId: completeGuestAction
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/InviteToken'
+      responses:
+        '200': { description: Action recorded }
+        '404': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/guest/documents/final:
+    get:
+      summary: Download the sealed PDF for the guest's agreement
+      operationId: downloadGuestFinalDocument
+      security: [{ guestSession: [] }]
+      responses:
+        '200': { description: Sealed PDF }
+        '404': { $ref: '#/components/responses/Problem' }
+  /.well-known/theckards-keys.json:
+    get:
+      summary: Public seal verification keys (old keys are never removed)
+      operationId: getSealPublicKeys
+      security: []
+      responses:
+        '200': { description: Public keys }
   /api/admin/settings:
     get:
       summary: List product settings
@@ -204,12 +275,21 @@ components:
       type: apiKey
       in: cookie
       name: __Host-theckards_admin_session
+    guestSession:
+      type: apiKey
+      in: cookie
+      name: __Host-theckards_guest_session
   parameters:
     AgreementId:
       name: id
       in: path
       required: true
       schema: { type: string, format: uuid }
+    InviteToken:
+      name: token
+      in: path
+      required: true
+      schema: { type: string, minLength: 20, maxLength: 128 }
     SettingKey:
       name: key
       in: path

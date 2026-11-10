@@ -55,3 +55,15 @@ describe("agreement route authorization contract", () => {
     }
   });
 });
+
+describe("guest route contract", () => {
+  it("rate-limits every token-based guest endpoint and scopes downloads to a guest session", async () => {
+    const root = path.resolve(process.cwd(), "src/app/api/guest");
+    for (const file of await routeFiles(root)) {
+      const source = await readFile(file, "utf8");
+      expect(source, file).toContain("rateLimit:");
+      if (file.includes("[token]")) expect(source, file).toMatch(/auth:\s*"public"/);
+      else expect(source, file).toMatch(/auth:\s*"guest"/);
+    }
+  });
+});

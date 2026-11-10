@@ -2,6 +2,8 @@ export const USER_COOKIE = "__Host-theckards_session";
 export const ADMIN_COOKIE = "__Host-theckards_admin_session";
 export const CSRF_COOKIE = "__Host-theckards_csrf";
 export const AUTH_TRANSACTION_COOKIE = "__Host-theckards_auth_tx";
+export const GUEST_COOKIE = "__Host-theckards_guest_session";
+export const GUEST_CSRF_COOKIE = "__Host-theckards_guest_csrf";
 
 export const secureCookie = {
   httpOnly: true,

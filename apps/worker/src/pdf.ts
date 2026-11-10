@@ -2,7 +2,24 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import fontkit from "@pdf-lib/fontkit";
 import { renderAgreement, type TemplateId } from "@theckards/domain";
-import { PDFDocument, PDFFont, PDFPage, rgb } from "pdf-lib";
+import { PDFDocument, PDFFont, PDFPage, degrees, rgb } from "pdf-lib";
+import QRCode from "qrcode";
+
+export interface FinalSigner {
+  role: "Creator" | "Counterparty";
+  typedName: string;
+  signedAt: Date;
+}
+
+export interface FinalOptions {
+  sealId: string;
+  sealedAt: Date;
+  contentSha256: string;
+  signedDocumentSha256: string;
+  signers: readonly FinalSigner[];
+  verifyUrl: string;
+  watermark: boolean;
+}
 
 const require = createRequire(import.meta.url);
 let fontBytes: Uint8Array | undefined;
@@ -34,11 +51,11 @@ export async function renderAgreementPdf(input: {
   templateId: TemplateId;
   fields: unknown;
   createdAt: Date;
-}): Promise<Uint8Array> {
+}, final?: FinalOptions): Promise<Uint8Array> {
   const pdf = await PDFDocument.create({ updateMetadata: false });
   pdf.registerFontkit(fontkit);
   const font = await pdf.embedFont(await loadFont(), { subset: true, customName: "NotoSans" });
-  const fixedDate = new Date(input.createdAt.toISOString());
+  const fixedDate = new Date((final?.sealedAt ?? input.createdAt).toISOString());
   pdf.setTitle(input.title, { showInWindowTitleBar: true });
   pdf.setAuthor("Theckards");
   pdf.setCreator("Theckards PDF worker");
@@ -81,7 +98,45 @@ export async function renderAgreementPdf(input: {
   }
   ensure(45);
   drawLines(`Content record ID: ${input.agreementId}`, 8, rgb(0.35, 0.4, 0.38));
-  drawLines("DRAFT PREVIEW — NOT SIGNED", 9, rgb(0.60, 0.20, 0.15));
+  if (!final) {
+    drawLines("DRAFT PREVIEW — NOT SIGNED", 9, rgb(0.60, 0.20, 0.15));
+    return pdf.save({ useObjectStreams: false, addDefaultPage: false, objectsPerTick: 1_000 });
+  }
+
+  // ---------- Signature certificate page ----------
+  const muted = rgb(0.35, 0.4, 0.38);
+  newPage();
+  drawLines("Signature certificate", 20);
+  drawLines(`Seal ID: ${final.sealId}`, 9, muted);
+  drawLines(`Sealed at (UTC): ${final.sealedAt.toISOString()}`, 9, muted);
+  drawLines(`Agreement content SHA-256: ${final.contentSha256}`, 8, muted);
+  drawLines(`Signed document SHA-256: ${final.signedDocumentSha256}`, 8, muted);
+  y -= 8;
+  for (const signer of final.signers) {
+    drawLines(signer.role, 13, rgb(0.08, 0.42, 0.29));
+    drawLines(`Typed signature: ${signer.typedName}`);
+    drawLines(`Signed at (UTC): ${signer.signedAt.toISOString()}`);
+    drawLines("Method: electronic signature with explicit consent and a one-time code sent to the party's email address.", 9, muted);
+    y -= 6;
+  }
+  y -= 6;
+  drawLines("What this record shows", 13, rgb(0.08, 0.42, 0.29));
+  drawLines("Integrity: the receipt for this seal contains the SHA-256 of this exact file; any change to the file produces a different hash.", 9);
+  drawLines("Authenticity: the receipt is signed with a key controlled by Theckards, verifiable with the published public key.", 9);
+  drawLines("Limits: Theckards did not witness the negotiation, does not certify civil identity, and an email code is not strong identity verification. Theckards does not hold funds or guarantee performance or payment.", 9);
+
+  const qr = await QRCode.toBuffer(final.verifyUrl, { type: "png", margin: 1, width: 220, errorCorrectionLevel: "M" });
+  const qrImage = await pdf.embedPng(qr);
+  ensure(130);
+  page.drawImage(qrImage, { x: margin, y: y - 110, width: 110, height: 110 });
+  page.drawText("Verify this record:", { x: margin + 125, y: y - 40, size: 10, font });
+  page.drawText(final.verifyUrl, { x: margin + 125, y: y - 56, size: 8, font, color: muted });
+
+  if (final.watermark) {
+    for (const each of pdf.getPages()) {
+      each.drawText("THECKARDS FREE", { x: 150, y: 260, size: 54, font, color: rgb(0.85, 0.88, 0.86), opacity: 0.35, rotate: degrees(35) });
+    }
+  }
 
   return pdf.save({ useObjectStreams: false, addDefaultPage: false, objectsPerTick: 1_000 });
 }

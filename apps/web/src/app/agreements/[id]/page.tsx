@@ -16,7 +16,11 @@ export default async function AgreementPage({ params }: { params: Promise<{ id: 
       <a href="/dashboard">← Agreements</a><h1>{agreement.title}</h1>
       <p className="muted">Version {agreement.currentVersionNumber} · record revision {agreement.lockVersion}</p>
       {agreement.sections.map((section) => <section className="card" key={section.heading}><h2>{section.heading}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</section>)}
-      <AgreementActions id={agreement.id} lockVersion={agreement.lockVersion} state={agreement.state} renderStatus={agreement.renderStatus} />
+      <p className="notice">Review before signing. Not legal advice. Theckards provides a verifiable record and does not handle payments between the parties.</p>
+      <AgreementActions id={agreement.id} lockVersion={agreement.lockVersion} state={agreement.state} renderStatus={agreement.renderStatus}
+        creatorSignedName={agreement.creatorSignedName} creatorSignedAt={agreement.creatorSignedAt}
+        counterpartyName={agreement.counterpartyName} counterpartySignedName={agreement.counterpartySignedName}
+        counterpartySignedAt={agreement.counterpartySignedAt} finalSealId={agreement.finalSealId} />
     </main>
   </>;
 }

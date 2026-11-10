@@ -341,4 +341,69 @@ DO $$ BEGIN
 END $$;
 `,
   },
+  {
+    id: "0004",
+    name: "signing_and_sealing",
+    sql: `
+ALTER TABLE parties ADD COLUMN IF NOT EXISTS invite_consumed_at timestamptz;
+
+CREATE TABLE IF NOT EXISTS signatures (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agreement_id uuid NOT NULL REFERENCES agreements(id),
+  version_id uuid NOT NULL REFERENCES agreement_versions(id),
+  party_id uuid NOT NULL REFERENCES parties(id),
+  typed_name text NOT NULL CHECK (char_length(typed_name) BETWEEN 3 AND 120),
+  esign_document_id uuid NOT NULL REFERENCES legal_documents(id),
+  otp_verified_at timestamptz NOT NULL,
+  ip_ciphertext bytea,
+  user_agent_ciphertext bytea,
+  document_sha256 char(64) NOT NULL,
+  content_sha256 char(64) NOT NULL,
+  signed_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(version_id, party_id)
+);
+CREATE INDEX IF NOT EXISTS signatures_agreement_idx ON signatures(agreement_id, version_id);
+
+CREATE TABLE IF NOT EXISTS party_consents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  party_id uuid NOT NULL REFERENCES parties(id),
+  legal_document_id uuid NOT NULL REFERENCES legal_documents(id),
+  accepted_at timestamptz NOT NULL DEFAULT now(),
+  ip_ciphertext bytea,
+  user_agent_ciphertext bytea,
+  UNIQUE(party_id, legal_document_id)
+);
+
+CREATE TABLE IF NOT EXISTS sealed_documents (
+  id uuid PRIMARY KEY,
+  agreement_id uuid NOT NULL REFERENCES agreements(id),
+  version_id uuid REFERENCES agreement_versions(id),
+  kind text NOT NULL CHECK (kind IN ('FINAL', 'ADDENDUM', 'DOSSIER')),
+  s3_key text NOT NULL,
+  sha256 char(64) NOT NULL UNIQUE,
+  content_sha256 char(64) NOT NULL,
+  kms_key_id text NOT NULL,
+  algorithm text NOT NULL DEFAULT 'ECDSA_P256_SHA256',
+  signature bytea NOT NULL,
+  receipt jsonb NOT NULL,
+  watermarked boolean NOT NULL DEFAULT true,
+  anchor_id uuid,
+  sealed_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(agreement_id, version_id, kind)
+);
+
+ALTER TABLE agreements ADD COLUMN IF NOT EXISTS executed_at timestamptz;
+
+DROP TRIGGER IF EXISTS signatures_append_only ON signatures;
+CREATE TRIGGER signatures_append_only BEFORE UPDATE OR DELETE ON signatures
+FOR EACH ROW EXECUTE FUNCTION prevent_append_only_change();
+DROP TRIGGER IF EXISTS party_consents_append_only ON party_consents;
+CREATE TRIGGER party_consents_append_only BEFORE UPDATE OR DELETE ON party_consents
+FOR EACH ROW EXECUTE FUNCTION prevent_append_only_change();
+DROP TRIGGER IF EXISTS sealed_documents_append_only ON sealed_documents;
+CREATE TRIGGER sealed_documents_append_only BEFORE UPDATE OR DELETE ON sealed_documents
+FOR EACH ROW EXECUTE FUNCTION prevent_append_only_change();
+`,
+  },
 ] as const;

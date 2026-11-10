@@ -2,16 +2,16 @@ import { canonicalJson } from "@theckards/domain";
 import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import type { z } from "zod";
-import { ADMIN_COOKIE, USER_COOKIE } from "../auth/cookies";
-import { verifyMutationRequest } from "../auth/csrf";
+import { ADMIN_COOKIE, GUEST_COOKIE, USER_COOKIE } from "../auth/cookies";
+import { verifyMutationRequest, verifyOrigin } from "../auth/csrf";
 import { sha256 } from "../crypto";
-import { loadSession, type SessionIdentity } from "../auth/session-store";
+import { loadGuestSession, loadSession, type GuestSession, type SessionIdentity } from "../auth/session-store";
 import { enforceRateLimit, requestAddress } from "../rate-limit";
 import { claimIdempotency, completeIdempotency, releaseIdempotency, type IdempotencyClaim } from "./idempotency";
 import { ProblemError, problemResponse } from "./problem";
 
 export interface RouteOptions<TSchema extends z.ZodTypeAny | undefined = undefined> {
-  auth: "public" | "user" | "admin";
+  auth: "public" | "user" | "admin" | "guest";
   schema?: TSchema;
   rateLimit?: { scope: string; limit: number; windowSeconds: number };
   csrf?: boolean;
@@ -23,6 +23,7 @@ export interface RouteInvocation<TBody = unknown> {
   request: Request;
   requestId: string;
   session: SessionIdentity | null;
+  guest: GuestSession | null;
   body: TBody;
   params: Record<string, string>;
 }
@@ -41,7 +42,9 @@ export function withRoute<TSchema extends z.ZodTypeAny | undefined = undefined>(
       let session: SessionIdentity | null = null;
       if (options.auth === "user") session = await loadSession(jar.get(USER_COOKIE)?.value, "USER");
       if (options.auth === "admin") session = await loadSession(jar.get(ADMIN_COOKIE)?.value, "ADMIN");
-      if (options.auth !== "public" && !session) throw new ProblemError(401, "Unauthorized", "A valid session is required.");
+      const guest = options.auth === "guest" ? await loadGuestSession(jar.get(GUEST_COOKIE)?.value) : null;
+      if ((options.auth === "user" || options.auth === "admin") && !session) throw new ProblemError(401, "Unauthorized", "A valid session is required.");
+      if (options.auth === "guest" && !guest) throw new ProblemError(401, "Unauthorized", "A valid guest session is required.");
       if (options.auth === "admin") {
         if (!session?.groups.includes("admins") || !session.adminRole) throw new ProblemError(403, "Forbidden", "Administrator access is required.");
         if (options.ownerOnly && session.adminRole !== "OWNER") throw new ProblemError(403, "Forbidden", "Owner access is required.");
@@ -50,7 +53,11 @@ export function withRoute<TSchema extends z.ZodTypeAny | undefined = undefined>(
         await enforceRateLimit(options.rateLimit.scope, session?.userId ?? requestAddress(request), options.rateLimit.limit, options.rateLimit.windowSeconds);
       }
       const isMutation = !["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase());
-      if (isMutation && options.auth !== "public" && options.csrf !== false && session) verifyMutationRequest(request, session);
+      if (isMutation && options.csrf !== false) {
+        if (session) verifyMutationRequest(request, session);
+        else if (guest) verifyMutationRequest(request, guest);
+        else verifyOrigin(request);
+      }
       const contentLength = Number(request.headers.get("content-length") ?? 0);
       if (contentLength > 1_048_576) throw new ProblemError(413, "Payload Too Large", "Request bodies are limited to 1 MB.");
       let body: unknown = undefined;
@@ -67,7 +74,7 @@ export function withRoute<TSchema extends z.ZodTypeAny | undefined = undefined>(
         const key = request.headers.get("idempotency-key");
         if (!key || !/^[A-Za-z0-9._:-]{8,128}$/.test(key)) throw new ProblemError(400, "Idempotency-Key required", "Provide a valid Idempotency-Key header.");
         idempotency = {
-          scope: `${options.idempotent}:${session?.userId ?? requestAddress(request)}`,
+          scope: `${options.idempotent}:${session?.userId ?? guest?.partyId ?? requestAddress(request)}`,
           key,
           requestHash: sha256(canonicalJson(body ?? null)),
         };
@@ -81,7 +88,7 @@ export function withRoute<TSchema extends z.ZodTypeAny | undefined = undefined>(
       }
       let response: Response;
       try {
-        response = await handler({ request, requestId, session, body: body as never, params });
+        response = await handler({ request, requestId, session, guest, body: body as never, params });
         if (idempotency) await completeIdempotency(idempotency, response);
       } catch (error) {
         if (idempotency) await releaseIdempotency(idempotency);

@@ -36,3 +36,14 @@ describe("agreement migration", () => {
     expect(schema).not.toContain("invite_token text");
   });
 });
+
+describe("signing migration", () => {
+  const schema = migrations.find((migration) => migration.id === "0004")?.sql ?? "";
+  it("makes signatures, guest consents and sealed documents append-only", () => {
+    for (const trigger of ["signatures_append_only", "party_consents_append_only", "sealed_documents_append_only"]) expect(schema).toContain(trigger);
+  });
+  it("allows only one signature per party per version and one seal per hash", () => {
+    expect(schema).toContain("UNIQUE(version_id, party_id)");
+    expect(schema).toContain("sha256 char(64) NOT NULL UNIQUE");
+  });
+});

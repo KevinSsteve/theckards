@@ -18,9 +18,32 @@ export interface AgreementRecord {
   fields: Record<string, unknown>;
   sections: ReturnType<typeof renderAgreement>;
   inviteExpiresAt: string | null;
+  counterpartyName: string | null;
+  creatorSignedName: string | null;
+  creatorSignedAt: string | null;
+  counterpartySignedName: string | null;
+  counterpartySignedAt: string | null;
+  finalSealId: string | null;
+  finalSha256: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+const AGREEMENT_SELECT = `
+  SELECT a.id, a.title, a.template_id, a.state, a.lock_version, a.current_version_number,
+         a.due_at, a.created_at, a.updated_at, v.render_status, v.document_sha256, v.fields,
+         cp.invite_expires_at, cp.display_name AS counterparty_name,
+         cs.typed_name AS creator_signed_name, cs.signed_at AS creator_signed_at,
+         ps.typed_name AS counterparty_signed_name, ps.signed_at AS counterparty_signed_at,
+         fd.id AS final_seal_id, fd.sha256 AS final_sha256
+  FROM agreements a
+  JOIN agreement_versions v ON v.agreement_id = a.id AND v.number = a.current_version_number
+  LEFT JOIN parties cr ON cr.agreement_id = a.id AND cr.role = 'CREATOR'
+  LEFT JOIN parties cp ON cp.agreement_id = a.id AND cp.role = 'COUNTERPARTY'
+  LEFT JOIN signatures cs ON cs.version_id = v.id AND cs.party_id = cr.id
+  LEFT JOIN signatures ps ON ps.version_id = v.id AND ps.party_id = cp.id
+  LEFT JOIN sealed_documents fd ON fd.version_id = v.id AND fd.kind = 'FINAL'
+`;
 
 interface AgreementRow {
   id: string;
@@ -34,6 +57,13 @@ interface AgreementRow {
   document_sha256: string | null;
   fields: Record<string, unknown>;
   invite_expires_at: Date | null;
+  counterparty_name: string | null;
+  creator_signed_name: string | null;
+  creator_signed_at: Date | null;
+  counterparty_signed_name: string | null;
+  counterparty_signed_at: Date | null;
+  final_seal_id: string | null;
+  final_sha256: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -46,6 +76,10 @@ function mapAgreement(row: AgreementRow): AgreementRecord {
     documentSha256: row.document_sha256, fields: row.fields,
     sections: renderAgreement(row.template_id, row.fields),
     inviteExpiresAt: row.invite_expires_at?.toISOString() ?? null,
+    counterpartyName: row.counterparty_name,
+    creatorSignedName: row.creator_signed_name, creatorSignedAt: row.creator_signed_at?.toISOString() ?? null,
+    counterpartySignedName: row.counterparty_signed_name, counterpartySignedAt: row.counterparty_signed_at?.toISOString() ?? null,
+    finalSealId: row.final_seal_id, finalSha256: row.final_sha256,
     createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString(),
   };
 }
@@ -77,13 +111,7 @@ async function requireLegal(userId: string): Promise<void> {
 }
 
 export async function listAgreements(userId: string): Promise<AgreementRecord[]> {
-  const result = await getPool().query<AgreementRow>(`
-    SELECT a.id, a.title, a.template_id, a.state, a.lock_version, a.current_version_number,
-           a.due_at, a.created_at, a.updated_at, v.render_status, v.document_sha256, v.fields,
-           cp.invite_expires_at
-    FROM agreements a
-    JOIN agreement_versions v ON v.agreement_id = a.id AND v.number = a.current_version_number
-    LEFT JOIN parties cp ON cp.agreement_id = a.id AND cp.role = 'COUNTERPARTY'
+  const result = await getPool().query<AgreementRow>(`${AGREEMENT_SELECT}
     WHERE a.creator_id = $1 OR EXISTS (
       SELECT 1 FROM parties p WHERE p.agreement_id = a.id AND p.user_id = $1
     )
@@ -93,13 +121,7 @@ export async function listAgreements(userId: string): Promise<AgreementRecord[]>
 }
 
 export async function getAgreement(userId: string, agreementId: string): Promise<AgreementRecord> {
-  const result = await getPool().query<AgreementRow>(`
-    SELECT a.id, a.title, a.template_id, a.state, a.lock_version, a.current_version_number,
-           a.due_at, a.created_at, a.updated_at, v.render_status, v.document_sha256, v.fields,
-           cp.invite_expires_at
-    FROM agreements a
-    JOIN agreement_versions v ON v.agreement_id = a.id AND v.number = a.current_version_number
-    LEFT JOIN parties cp ON cp.agreement_id = a.id AND cp.role = 'COUNTERPARTY'
+  const result = await getPool().query<AgreementRow>(`${AGREEMENT_SELECT}
     WHERE a.id = $1 AND (a.creator_id = $2 OR EXISTS (
       SELECT 1 FROM parties p WHERE p.agreement_id = a.id AND p.user_id = $2
     ))
@@ -214,7 +236,8 @@ export async function inviteCounterparty(input: {
       VALUES ($1, 'COUNTERPARTY', $2, $3, $4, $5, $6, now())
       ON CONFLICT (agreement_id, role) DO UPDATE SET display_name = EXCLUDED.display_name,
         email_ciphertext = EXCLUDED.email_ciphertext, email_hash = EXCLUDED.email_hash,
-        invite_token_hash = EXCLUDED.invite_token_hash, invite_expires_at = EXCLUDED.invite_expires_at, invited_at = now()
+        invite_token_hash = EXCLUDED.invite_token_hash, invite_expires_at = EXCLUDED.invite_expires_at, invited_at = now(),
+        invite_consumed_at = NULL
       RETURNING id
     `, [input.agreementId, input.displayName, emailCiphertext, hmac(email, "email"), hmac(token, "auth"), inviteExpiresAt]);
     await client.query("UPDATE agreements SET state = $2, lock_version = lock_version + 1, updated_at = now() WHERE id = $1", [input.agreementId, transition(current.state, "PENDING_SIGNATURES")]);
