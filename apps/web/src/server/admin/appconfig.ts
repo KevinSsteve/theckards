@@ -14,6 +14,7 @@ export async function deployFeatureFlags(flags: Flags): Promise<{ version: numbe
     RESEAL_AFTER_PURCHASE: "reseal_after_purchase",
     SIGNUPS_ENABLED: "signups_enabled",
     MAINTENANCE_MODE: "maintenance_mode",
+    EMAIL_DELIVERY_ENABLED: "email_delivery_enabled",
   };
   const mapped = Object.fromEntries(Object.entries(names).map(([source, target]) => [target, { enabled: flags[source] === true }]));
   const content = {

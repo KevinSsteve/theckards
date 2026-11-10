@@ -1,5 +1,15 @@
 import { agreementStateCheckSql } from "@theckards/domain";
 import { ESIGN_V1, NOTICE_V1, PRIVACY_V1, TERMS_V1 } from "./legal-v1.js";
+import { ESIGN_V2, PRIVACY_V2_REPLACEMENTS, TERMS_V2_REPLACEMENTS } from "./legal-v2.js";
+
+const lit = (value: string) => `$legal$${value}$legal$`;
+const replaced = (column: string, pairs: ReadonlyArray<readonly [string, string]>) =>
+  pairs.reduce((expr, [from, to]) => `replace(${expr}, ${lit(from)}, ${lit(to)})`, column);
+const draftV2FromApprovedV1 = (type: string, pairs: ReadonlyArray<readonly [string, string]>) => `
+INSERT INTO legal_documents(document_type, locale, version, status, title, body_md)
+SELECT document_type, locale, 2, 'DRAFT', title, ${replaced("body_md", pairs)}
+FROM legal_documents WHERE document_type = '${type}' AND locale = 'en-US' AND version = 1 AND status = 'APPROVED'
+ON CONFLICT (document_type, locale, version) DO NOTHING;`;
 
 export interface Migration {
   readonly id: string;
@@ -426,6 +436,52 @@ UPDATE legal_documents SET body_md = $legal$${TERMS_V1}$legal$ WHERE document_ty
 UPDATE legal_documents SET body_md = $legal$${PRIVACY_V1}$legal$ WHERE document_type = 'PRIVACY' AND version = 1 AND status = 'DRAFT' AND char_length(body_md) < 200;
 UPDATE legal_documents SET body_md = $legal$${ESIGN_V1}$legal$, title = 'Electronic Records and Signature Consent' WHERE document_type = 'ESIGN' AND version = 1 AND status = 'DRAFT' AND char_length(body_md) < 200;
 UPDATE legal_documents SET body_md = $legal$${NOTICE_V1}$legal$ WHERE document_type = 'NOTICE' AND version = 1 AND status = 'DRAFT' AND char_length(body_md) < 200;
+`,
+  },
+  {
+    id: "0007",
+    name: "in_person_qr_signing",
+    sql: `
+ALTER TABLE signatures ALTER COLUMN otp_verified_at DROP NOT NULL;
+ALTER TABLE signatures ADD COLUMN IF NOT EXISTS verification_method text NOT NULL DEFAULT 'EMAIL_OTP';
+ALTER TABLE signatures ADD COLUMN IF NOT EXISTS confirmed_by_party_id uuid REFERENCES parties(id);
+ALTER TABLE signatures DROP CONSTRAINT IF EXISTS signatures_verification_method_check;
+ALTER TABLE signatures ADD CONSTRAINT signatures_verification_method_check CHECK (verification_method IN ('EMAIL_OTP', 'ACCOUNT_SESSION', 'IN_PERSON_QR'));
+
+ALTER TABLE parties DROP CONSTRAINT IF EXISTS parties_invite_channel_check;
+ALTER TABLE parties ADD CONSTRAINT parties_invite_channel_check CHECK (invite_channel IN ('EMAIL', 'LINK', 'IN_PERSON'));
+
+CREATE TABLE IF NOT EXISTS in_person_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agreement_id uuid NOT NULL REFERENCES agreements(id),
+  version_id uuid NOT NULL REFERENCES agreement_versions(id),
+  token_hash char(64) NOT NULL UNIQUE,
+  status text NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'AWAITING_CONFIRMATION', 'COMPLETED', 'CANCELLED')),
+  expires_at timestamptz NOT NULL,
+  device_hash char(64),
+  typed_name text CHECK (typed_name IS NULL OR char_length(typed_name) BETWEEN 3 AND 120),
+  code_hash char(64),
+  attempts smallint NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 5),
+  ip_ciphertext bytea,
+  user_agent_ciphertext bytea,
+  requested_at timestamptz,
+  completed_at timestamptz,
+  party_id uuid REFERENCES parties(id),
+  guest_session_issued_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS in_person_sessions_agreement_idx ON in_person_sessions(agreement_id, created_at DESC);
+
+UPDATE app_settings SET value = value || '{"EMAIL_DELIVERY_ENABLED": false}'::jsonb, version = version + 1, updated_at = now()
+WHERE key = 'feature_flags' AND NOT (value ? 'EMAIL_DELIVERY_ENABLED');
+INSERT INTO app_settings_history(setting_key, value, version)
+SELECT key, value, version FROM app_settings WHERE key = 'feature_flags'
+ON CONFLICT (setting_key, version) DO NOTHING;
+${draftV2FromApprovedV1("TERMS", TERMS_V2_REPLACEMENTS)}
+${draftV2FromApprovedV1("PRIVACY", PRIVACY_V2_REPLACEMENTS)}
+INSERT INTO legal_documents(document_type, locale, version, status, title, body_md)
+VALUES ('ESIGN', 'en-US', 2, 'DRAFT', 'Electronic Records and Signature Consent', ${lit(ESIGN_V2)})
+ON CONFLICT (document_type, locale, version) DO NOTHING;
 `,
   },
 ] as const;

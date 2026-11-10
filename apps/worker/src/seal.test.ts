@@ -19,8 +19,8 @@ const final = {
   contentSha256: "a".repeat(64),
   signedDocumentSha256: "b".repeat(64),
   signers: [
-    { role: "Creator" as const, typedName: "Alex Seller", signedAt: new Date("2026-11-11T09:00:00.000Z") },
-    { role: "Counterparty" as const, typedName: "Jamie Buyer", signedAt: new Date("2026-11-11T10:00:00.000Z") },
+    { role: "Creator" as const, typedName: "Alex Seller", signedAt: new Date("2026-11-11T09:00:00.000Z"), method: "ACCOUNT_SESSION" as const },
+    { role: "Counterparty" as const, typedName: "Jamie Buyer", signedAt: new Date("2026-11-11T10:00:00.000Z"), method: "IN_PERSON_QR" as const },
   ],
   verifyUrl: "https://theckards.linkealls.com/verify?seal=x",
   watermark: true,

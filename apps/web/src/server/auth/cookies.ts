@@ -18,3 +18,7 @@ export const csrfCookie = {
   sameSite: "strict" as const,
   path: "/",
 };
+
+/** Binds an in-person signing session to the counterparty's device (secret stored only as an HMAC). */
+export const DEVICE_COOKIE = "__Host-theckards_device";
+export const deviceCookie = { httpOnly: true, secure: true, sameSite: "strict" as const, path: "/", maxAge: 2 * 3600 };

@@ -52,6 +52,8 @@ export const SettingsSchemas = {
     RESEAL_AFTER_PURCHASE: z.boolean(),
     SIGNUPS_ENABLED: z.boolean(),
     MAINTENANCE_MODE: z.boolean(),
+    /** Email invitations, signing codes and receipt emails. Off while signing is in person only. */
+    EMAIL_DELIVERY_ENABLED: z.boolean().default(false),
     ACTIVE_LOCALES: z.array(z.enum(["en-US", "es", "pt"])).min(1),
   }),
 } as const;

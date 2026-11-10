@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ADMIN_COOKIE, AUTH_TRANSACTION_COOKIE, USER_COOKIE } from "../auth/cookies";
+import { ADMIN_COOKIE, AUTH_TRANSACTION_COOKIE, DEVICE_COOKIE, USER_COOKIE, deviceCookie } from "../auth/cookies";
 
 async function routeFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -65,6 +65,33 @@ describe("guest route contract", () => {
       if (file.includes("[token]")) expect(source, file).toMatch(/auth:\s*"public"/);
       else expect(source, file).toMatch(/auth:\s*"guest"/);
     }
+  });
+});
+
+describe("in-person route contract", () => {
+  it("every QR-token endpoint is public only with a rate limit, and never idempotency-stored", async () => {
+    const root = path.resolve(process.cwd(), "src/app/api/in-person");
+    const files = await routeFiles(root);
+    expect(files.length).toBeGreaterThanOrEqual(4);
+    for (const file of files) {
+      const source = await readFile(file, "utf8");
+      expect(source, file).toMatch(/auth:\s*"public"/);
+      expect(source, file).toContain("rateLimit:");
+      expect(source, file).not.toContain("idempotent:");
+    }
+  });
+
+  it("the creator start/status/confirm endpoints require the user session", async () => {
+    for (const relative of ["[id]/in-person/route.ts", "[id]/in-person/confirm/route.ts", "[id]/sign/route.ts"]) {
+      const source = await readFile(path.resolve(process.cwd(), "src/app/api/agreements", relative), "utf8");
+      expect(source, relative).toMatch(/auth:\s*"user"/);
+      expect(source, relative).toContain("rateLimit:");
+    }
+  });
+
+  it("binds the device with a __Host, httpOnly, SameSite=Strict cookie", () => {
+    expect(DEVICE_COOKIE).toMatch(/^__Host-/);
+    expect(deviceCookie).toMatchObject({ httpOnly: true, secure: true, sameSite: "strict", path: "/" });
   });
 });
 

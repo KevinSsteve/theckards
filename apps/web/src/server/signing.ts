@@ -9,7 +9,7 @@ import { issueOtp, verifyOtp } from "./otp";
 
 export interface Evidence { ip: string; userAgent: string }
 
-interface LockedAgreement {
+export interface LockedAgreement {
   id: string;
   state: AgreementState;
   lock_version: number;
@@ -25,14 +25,38 @@ async function approvedEsignId(): Promise<{ esignId: string; documentIds: string
   return { esignId: documents.find((d) => d.documentType === "ESIGN")!.id, documentIds: documents.map((d) => d.id) };
 }
 
-async function encryptEvidence(evidence: Evidence): Promise<[Buffer, Buffer]> {
+/** Version 2 of Terms, Privacy and ESIGN is the first that describes in-person QR signing; v1 describes email codes. */
+export const IN_PERSON_MIN_LEGAL_VERSION = 2;
+
+export async function requireInPersonLegal(): Promise<{ esignId: string; documentIds: string[] }> {
+  const legal = await approvedEsignId();
+  const documents = await currentApprovedLegal();
+  const outdated = (["TERMS", "PRIVACY", "ESIGN"] as const).filter((type) => (documents.find((d) => d.documentType === type)?.version ?? 0) < IN_PERSON_MIN_LEGAL_VERSION);
+  if (outdated.length > 0) {
+    throw new ProblemError(503, "Signing unavailable", "In-person signing opens after the updated legal documents (version 2) are approved.");
+  }
+  return legal;
+}
+
+export async function emailDeliveryEnabled(): Promise<boolean> {
+  const result = await getPool().query<{ enabled: string | null }>("SELECT value->>'EMAIL_DELIVERY_ENABLED' AS enabled FROM app_settings WHERE key = 'feature_flags'");
+  return result.rows[0]?.enabled === "true";
+}
+
+export async function requireEmailDelivery(): Promise<void> {
+  if (!(await emailDeliveryEnabled())) {
+    throw new ProblemError(409, "Email delivery disabled", "Email invitations and codes are turned off. Use in-person QR signing.");
+  }
+}
+
+export async function encryptEvidence(evidence: Evidence): Promise<[Buffer, Buffer]> {
   return Promise.all([
     encryptText(evidence.ip, "signature-ip"),
     encryptText(evidence.userAgent.slice(0, 512), "signature-user-agent"),
   ]);
 }
 
-async function currentVersion(client: pg.PoolClient, agreementId: string, number: number): Promise<{ id: string; document_sha256: string; content_sha256: string }> {
+export async function currentVersion(client: pg.PoolClient, agreementId: string, number: number): Promise<{ id: string; document_sha256: string; content_sha256: string }> {
   const result = await client.query<{ id: string; render_status: string; document_sha256: string | null; content_sha256: string }>(
     "SELECT id, render_status, document_sha256, content_sha256 FROM agreement_versions WHERE agreement_id = $1 AND number = $2",
     [agreementId, number],
@@ -48,20 +72,23 @@ async function currentVersion(client: pg.PoolClient, agreementId: string, number
  * Inserts one signature for the current version and, when both parties have signed
  * exactly the same document hash, executes the agreement and queues sealing.
  */
-async function recordSignature(client: pg.PoolClient, input: {
+export type VerificationMethod = "EMAIL_OTP" | "ACCOUNT_SESSION" | "IN_PERSON_QR";
+
+export async function recordSignature(client: pg.PoolClient, input: {
   agreement: LockedAgreement; partyId: string; role: "CREATOR" | "COUNTERPARTY";
-  typedName: string; esignId: string; otpVerifiedAt: Date; evidence: [Buffer, Buffer];
+  typedName: string; esignId: string; evidence: [Buffer, Buffer];
+  method: VerificationMethod; otpVerifiedAt?: Date | null; confirmedByPartyId?: string | null;
 }): Promise<AgreementState> {
   const allowed: AgreementState[] = input.role === "CREATOR" ? ["DRAFT", "PENDING_SIGNATURES"] : ["PENDING_SIGNATURES"];
   if (!allowed.includes(input.agreement.state)) throw new ProblemError(409, "Invalid state", "This agreement cannot be signed in its current state.");
   const version = await currentVersion(client, input.agreement.id, input.agreement.current_version_number);
   const inserted = await client.query(`
     INSERT INTO signatures(agreement_id, version_id, party_id, typed_name, esign_document_id, otp_verified_at,
-      ip_ciphertext, user_agent_ciphertext, document_sha256, content_sha256)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      ip_ciphertext, user_agent_ciphertext, document_sha256, content_sha256, verification_method, confirmed_by_party_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     ON CONFLICT (version_id, party_id) DO NOTHING
-  `, [input.agreement.id, version.id, input.partyId, input.typedName, input.esignId, input.otpVerifiedAt,
-      input.evidence[0], input.evidence[1], version.document_sha256, version.content_sha256]);
+  `, [input.agreement.id, version.id, input.partyId, input.typedName, input.esignId, input.otpVerifiedAt ?? null,
+      input.evidence[0], input.evidence[1], version.document_sha256, version.content_sha256, input.method, input.confirmedByPartyId ?? null]);
   if (inserted.rowCount !== 1) throw new ProblemError(409, "Already signed", "This version is already signed by this party.");
 
   const signed = await client.query<{ role: string; document_sha256: string }>(`
@@ -83,7 +110,7 @@ async function recordSignature(client: pg.PoolClient, input: {
 
 // ---------- Creator ----------
 
-async function creatorContext(userId: string, agreementId: string): Promise<{ partyId: string; emailHash: string }> {
+export async function creatorContext(userId: string, agreementId: string): Promise<{ partyId: string; emailHash: string }> {
   const result = await getPool().query<{ party_id: string; email_hash: string }>(`
     SELECT p.id AS party_id, u.email_hash FROM agreements a
     JOIN parties p ON p.agreement_id = a.id AND p.role = 'CREATOR' AND p.user_id = $2
@@ -97,19 +124,13 @@ async function creatorContext(userId: string, agreementId: string): Promise<{ pa
 
 const signScope = (agreementId: string, partyId: string) => `sign:${agreementId}:${partyId}`;
 
-export async function requestCreatorCode(userId: string, agreementId: string, ip: string): Promise<{ expiresAt: string }> {
-  await approvedEsignId();
-  const context = await creatorContext(userId, agreementId);
-  return issueOtp({ scope: signScope(agreementId, context.partyId), emailHash: context.emailHash, ip, recipient: { kind: "user", userId } });
-}
-
+/** The creator signs from their authenticated account session (Cognito sign-in with a verified email). */
 export async function signAsCreator(input: {
-  userId: string; agreementId: string; expectedLockVersion: number; typedName: string; code: string; evidence: Evidence;
+  userId: string; agreementId: string; expectedLockVersion: number; typedName: string; evidence: Evidence;
 }): Promise<{ state: AgreementState }> {
   if (!(await userHasCurrentConsents(input.userId))) throw new ProblemError(403, "Legal consent required", "Accept the current legal documents before signing.");
-  const { esignId } = await approvedEsignId();
+  const { esignId } = await requireInPersonLegal();
   const context = await creatorContext(input.userId, input.agreementId);
-  const otpVerifiedAt = await verifyOtp(signScope(input.agreementId, context.partyId), context.emailHash, input.code);
   const evidence = await encryptEvidence(input.evidence);
   const state = await inTransaction(async (client) => {
     const locked = await client.query<LockedAgreement>(
@@ -119,7 +140,7 @@ export async function signAsCreator(input: {
     const agreement = locked.rows[0];
     if (!agreement) throw new ProblemError(404, "Not Found", "Agreement not found.");
     if (agreement.lock_version !== input.expectedLockVersion) throw new ProblemError(412, "Precondition Failed", "The agreement changed. Reload and review it again before signing.");
-    return recordSignature(client, { agreement, partyId: context.partyId, role: "CREATOR", typedName: input.typedName, esignId, otpVerifiedAt, evidence });
+    return recordSignature(client, { agreement, partyId: context.partyId, role: "CREATOR", typedName: input.typedName, esignId, evidence, method: "ACCOUNT_SESSION" });
   });
   return { state };
 }
@@ -185,6 +206,7 @@ function requireUsableInvite(invite: InviteContext | null): InviteContext {
  * address here; it can be corrected until the invitation is consumed, and it may not be the creator's address (F1).
  */
 export async function requestGuestCode(token: string, ip: string, email?: string): Promise<{ expiresAt: string }> {
+  await requireEmailDelivery();
   await approvedEsignId();
   const invite = requireUsableInvite(await loadInvite(token));
   let emailHash = invite.emailHash;
@@ -211,6 +233,7 @@ type GuestAction = { action: "sign"; typedName: string } | { action: "request_ch
 export async function completeGuestAction(input: { token: string; code: string; evidence: Evidence } & GuestAction): Promise<{
   state: AgreementState; session: { token: string; csrf: string; absoluteExpiresAt: Date };
 }> {
+  await requireEmailDelivery();
   const legal = await approvedEsignId();
   const invite = requireUsableInvite(await loadInvite(input.token));
   if (!invite.emailHash) throw new ProblemError(422, "Invalid code", "Request a verification code first.");
@@ -235,7 +258,7 @@ export async function completeGuestAction(input: { token: string; code: string; 
     }
     let state: AgreementState;
     if (input.action === "sign") {
-      state = await recordSignature(client, { agreement, partyId: invite.partyId, role: "COUNTERPARTY", typedName: input.typedName, esignId: legal.esignId, otpVerifiedAt, evidence });
+      state = await recordSignature(client, { agreement, partyId: invite.partyId, role: "COUNTERPARTY", typedName: input.typedName, esignId: legal.esignId, method: "EMAIL_OTP", otpVerifiedAt, evidence });
     } else {
       state = transition(agreement.state, "REVISION_REQUESTED");
       await client.query("UPDATE agreements SET state = $2, lock_version = lock_version + 1, updated_at = now() WHERE id = $1", [agreement.id, state]);

@@ -9,7 +9,14 @@ export interface FinalSigner {
   role: "Creator" | "Counterparty";
   typedName: string;
   signedAt: Date;
+  method: "EMAIL_OTP" | "ACCOUNT_SESSION" | "IN_PERSON_QR";
 }
+
+export const METHOD_TEXT: Record<FinalSigner["method"], string> = {
+  EMAIL_OTP: "Method: electronic signature with explicit consent and a one-time code sent to the party's email address.",
+  ACCOUNT_SESSION: "Method: electronic signature with explicit consent, given from the party's signed-in account (email address verified at sign-up).",
+  IN_PERSON_QR: "Method: electronic signature with explicit consent, given in person on the party's own device after scanning a single-use QR code; the other party confirmed it by entering a code shown on that device.",
+};
 
 export interface FinalOptions {
   sealId: string;
@@ -116,14 +123,14 @@ export async function renderAgreementPdf(input: {
     drawLines(signer.role, 13, rgb(0.08, 0.42, 0.29));
     drawLines(`Typed signature: ${signer.typedName}`);
     drawLines(`Signed at (UTC): ${signer.signedAt.toISOString()}`);
-    drawLines("Method: electronic signature with explicit consent and a one-time code sent to the party's email address.", 9, muted);
+    drawLines(METHOD_TEXT[signer.method], 9, muted);
     y -= 6;
   }
   y -= 6;
   drawLines("What this record shows", 13, rgb(0.08, 0.42, 0.29));
   drawLines("Integrity: the receipt for this seal contains the SHA-256 of this exact file; any change to the file produces a different hash.", 9);
   drawLines("Authenticity: the receipt is signed with a key controlled by Theckards, verifiable with the published public key.", 9);
-  drawLines("Limits: Theckards did not witness the negotiation, does not certify civil identity, and an email code is not strong identity verification. Theckards does not hold funds or guarantee performance or payment.", 9);
+  drawLines("Limits: Theckards did not witness the negotiation, does not certify civil identity, and neither an email code, a signed-in account nor an in-person QR confirmation is strong identity verification. Theckards does not hold funds or guarantee performance or payment.", 9);
 
   const qr = await QRCode.toBuffer(final.verifyUrl, { type: "png", margin: 1, width: 220, errorCorrectionLevel: "M" });
   const qrImage = await pdf.embedPng(qr);

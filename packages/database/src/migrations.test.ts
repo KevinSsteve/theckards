@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AGREEMENT_STATES, legalApprovalBlockers } from "@theckards/domain";
+import { PRIVACY_V1, TERMS_V1 } from "./legal-v1.js";
+import { ESIGN_V2, PRIVACY_V2_REPLACEMENTS, TERMS_V2_REPLACEMENTS } from "./legal-v2.js";
 import { migrations } from "./migrations.js";
 
 describe("database migrations", () => {
@@ -69,5 +71,28 @@ describe("legal drafts v1", () => {
   });
   it("keeps owner-only fields marked so approval stays blocked until completed", () => {
     expect(legalApprovalBlockers(schema).length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("in-person QR signing migration", () => {
+  const schema = migrations.find((migration) => migration.id === "0007")?.sql ?? "";
+  it("every v2 replacement matches text that exists in the approved v1 drafts", () => {
+    for (const [from, to] of TERMS_V2_REPLACEMENTS) { expect(TERMS_V1).toContain(from); expect(from).not.toBe(to); }
+    for (const [from, to] of PRIVACY_V2_REPLACEMENTS) { expect(PRIVACY_V1).toContain(from); expect(from).not.toBe(to); }
+  });
+  it("creates v2 legal documents only as drafts, derived from approved v1", () => {
+    expect(schema).toContain("version = 1 AND status = 'APPROVED'");
+    expect(schema.match(/2, 'DRAFT'/g)?.length).toBe(3);
+    expect(schema).not.toMatch(/status\s*=\s*'APPROVED'\s*,/);
+    expect(legalApprovalBlockers(ESIGN_V2)).toEqual([]);
+    expect(ESIGN_V2).not.toMatch(/one-time code sent to your email/i);
+  });
+  it("stores only hashes of the QR token, device and code, and turns email delivery off", () => {
+    expect(schema).toContain("token_hash char(64) NOT NULL UNIQUE");
+    expect(schema).toContain("device_hash char(64)");
+    expect(schema).toContain("code_hash char(64)");
+    expect(schema).not.toMatch(/\b(token|code) text\b/);
+    expect(schema).toContain("'IN_PERSON_QR'");
+    expect(schema).toContain('{"EMAIL_DELIVERY_ENABLED": false}');
   });
 });

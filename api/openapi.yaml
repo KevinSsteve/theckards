@@ -146,31 +146,137 @@ paths:
       responses:
         '200': { description: Private PDF preview }
         '404': { $ref: '#/components/responses/Problem' }
-  /api/agreements/{id}/otp:
-    post:
-      summary: Email the creator a 6-digit signing code
-      operationId: requestCreatorSigningCode
-      security: [{ userSession: [] }]
-      parameters:
-        - $ref: '#/components/parameters/AgreementId'
-        - $ref: '#/components/parameters/IdempotencyKey'
-      responses:
-        '202': { description: Code emailed }
-        '429': { $ref: '#/components/responses/Problem' }
-        '503': { $ref: '#/components/responses/Problem' }
   /api/agreements/{id}/sign:
     post:
-      summary: Sign the current version with typed name, ESIGN consent and email code
+      summary: Creator signs the current version from the signed-in account (typed name and ESIGN consent)
       operationId: signAgreementAsCreator
       security: [{ userSession: [] }]
       parameters:
         - $ref: '#/components/parameters/AgreementId'
         - $ref: '#/components/parameters/IfMatch'
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [typedName, consent]
+              properties:
+                typedName: { type: string, minLength: 3, maxLength: 120 }
+                consent: { type: boolean, enum: [true] }
       responses:
-        '200': { description: Signature recorded; agreement executed when both parties signed the same hash }
+        '200': { description: Signature recorded (method ACCOUNT_SESSION) }
         '409': { $ref: '#/components/responses/Problem' }
+        '412': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/in-person:
+    post:
+      summary: Creator opens a single-use QR signing session (15 minutes); cancels any previous one
+      description: Not stored by the idempotency layer because the response carries the QR secret; a retry simply opens a new session.
+      operationId: startInPersonSigning
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+      responses:
+        '201':
+          description: QR session opened
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, expiresAt, svg]
+                properties:
+                  url: { type: string, format: uri }
+                  expiresAt: { type: string, format: date-time }
+                  svg: { type: string }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+    get:
+      summary: Creator polls the latest in-person session
+      operationId: getInPersonSigning
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+      responses:
+        '200': { description: 'Status NONE, OPEN, AWAITING_CONFIRMATION, COMPLETED, CANCELLED or EXPIRED' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/in-person/confirm:
+    post:
+      summary: Creator types the code shown on the counterparty device; records the counterparty signature (IN_PERSON_QR)
+      operationId: confirmInPersonSigning
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '200': { description: Counterparty signature recorded; agreement executed when both signed the same hash }
+        '409': { $ref: '#/components/responses/Problem' }
+        '410': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/in-person/{token}/request:
+    post:
+      summary: Counterparty signs on their own device; binds the device (cookie) and returns the code to show the creator
+      operationId: requestInPersonSignature
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/QrToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [typedName, consent]
+              properties:
+                typedName: { type: string, minLength: 3, maxLength: 120 }
+                consent: { type: boolean, enum: [true] }
+      responses:
+        '201': { description: 'Code (6 digits, 10 minutes) for the creator to type' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /api/in-person/{token}/status:
+    get:
+      summary: Counterparty device polls the session; details only for the bound device
+      operationId: getInPersonStatusForCounterparty
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/QrToken'
+      responses:
+        '200': { description: 'Status OPEN, AWAITING_CONFIRMATION, COMPLETED or UNAVAILABLE' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /api/in-person/{token}/preview:
+    get:
+      summary: The exact PDF the counterparty is asked to sign, while the session is live
+      operationId: getInPersonPreview
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/QrToken'
+      responses:
+        '200': { description: PDF }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/in-person/{token}/download-session:
+    post:
+      summary: Once, on the bound device within 2 hours of completion, opens a guest session to download the sealed PDF
+      operationId: claimInPersonDownload
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/QrToken'
+      responses:
+        '200': { description: Guest session cookie set }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /api/agreements/{id}/documents/final:
     get:
       summary: Download the sealed final PDF
@@ -183,7 +289,7 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
   /api/guest/{token}/otp:
     post:
-      summary: Email the invited counterparty a 6-digit code
+      summary: Email the invited counterparty a 6-digit code (409 while EMAIL_DELIVERY_ENABLED is off)
       operationId: requestGuestCode
       security: []
       parameters:
@@ -295,6 +401,11 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    QrToken:
+      name: token
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[A-Za-z0-9_-]{40,64}$' }
     InviteToken:
       name: token
       in: path

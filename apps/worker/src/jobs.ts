@@ -3,6 +3,7 @@ import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3
 import { SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
 import { DeleteMessageCommand, ReceiveMessageCommand, SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
 import type { SealedReceipt, TemplateId } from "@theckards/domain";
+import type pg from "pg";
 import { decryptText } from "./crypto.js";
 import { pool, transaction } from "./db.js";
 import { buildMime } from "./mime.js";
@@ -50,6 +51,12 @@ async function sendOtp(payload: Record<string, unknown>): Promise<void> {
     `Your verification code is ${code}.\n\nIt expires in ${minutes} minutes. If you did not request it, ignore this email.\n\nTheckards will never ask you for this code by phone or chat.`);
 }
 
+/** Email is off while signing is in person only (feature flag EMAIL_DELIVERY_ENABLED, Admin dashboard). */
+async function emailDeliveryEnabled(client: pg.PoolClient): Promise<boolean> {
+  const result = await client.query<{ enabled: string | null }>("SELECT value->>'EMAIL_DELIVERY_ENABLED' AS enabled FROM app_settings WHERE key = 'feature_flags'");
+  return result.rows[0]?.enabled === "true";
+}
+
 async function sealFinal(payload: Record<string, unknown>): Promise<void> {
   const agreementId = String(payload.agreementId ?? "");
   const versionId = String(payload.versionId ?? "");
@@ -65,8 +72,9 @@ async function sealFinal(payload: Record<string, unknown>): Promise<void> {
   if (!agreement) throw new Error("Agreement version not found");
   if (!["EXECUTED", "COMPLETED", "IN_CASE", "RESOLVED"].includes(agreement.state)) throw new Error("Agreement is not executed");
 
-  const signatures = await pool.query<{ role: string; party_id: string; typed_name: string; signed_at: Date; document_sha256: string }>(`
-    SELECT p.role, p.id AS party_id, s.typed_name, s.signed_at, s.document_sha256
+  const signatures = await pool.query<{ role: string; party_id: string; typed_name: string; signed_at: Date; document_sha256: string; method: FinalSigner["method"]; has_email: boolean }>(`
+    SELECT p.role, p.id AS party_id, s.typed_name, s.signed_at, s.document_sha256, s.verification_method AS method,
+      (p.email_hash IS NOT NULL OR p.user_id IS NOT NULL) AS has_email
     FROM signatures s JOIN parties p ON p.id = s.party_id WHERE s.version_id = $1 ORDER BY p.role DESC
   `, [versionId]);
   const roles = new Set(signatures.rows.map((row) => row.role));
@@ -76,7 +84,7 @@ async function sealFinal(payload: Record<string, unknown>): Promise<void> {
   const sealId = sealIdFor(agreementId, versionId, "FINAL");
   const sealedAt = new Date(Math.max(...signatures.rows.map((row) => row.signed_at.getTime())));
   const signers: FinalSigner[] = signatures.rows.map((row) => ({
-    role: row.role === "CREATOR" ? "Creator" : "Counterparty", typedName: row.typed_name, signedAt: row.signed_at,
+    role: row.role === "CREATOR" ? "Creator" : "Counterparty", typedName: row.typed_name, signedAt: row.signed_at, method: row.method,
   }));
   const bytes = await renderAgreementPdf(
     { agreementId, version: agreement.number, title: agreement.title, templateId: agreement.template_id, fields: agreement.fields, createdAt: agreement.created_at },
@@ -98,8 +106,9 @@ async function sealFinal(payload: Record<string, unknown>): Promise<void> {
       VALUES ($1, $2, $3, 'FINAL', $4, $5, $6, $7, $8, $9::jsonb, true, $10)
       ON CONFLICT DO NOTHING RETURNING id
     `, [sealId, agreementId, versionId, `${prefix}.pdf`, fileSha256, agreement.content_sha256, keyId, signature, JSON.stringify(receipt), sealedAt]);
-    if (inserted.rowCount === 1) {
-      for (const recipient of [{ kind: "user", userId: agreement.creator_id }, { kind: "party", partyId: counterparty.party_id }]) {
+    if (inserted.rowCount === 1 && await emailDeliveryEnabled(client)) {
+      const recipients = [{ kind: "user", userId: agreement.creator_id }, ...(counterparty.has_email ? [{ kind: "party", partyId: counterparty.party_id }] : [])];
+      for (const recipient of recipients) {
         await client.query("INSERT INTO outbox(topic, payload) VALUES ('email.receipt', $1::jsonb)", [JSON.stringify({ sealId, recipient })]);
       }
     }

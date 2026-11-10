@@ -5,6 +5,9 @@ import { getPool, inTransaction } from "./db";
 import { env } from "./env";
 import { ProblemError } from "./http/problem";
 import { userHasCurrentConsents } from "./legal";
+import { requireEmailDelivery } from "./signing";
+
+const CANCEL_OPEN_IN_PERSON = "UPDATE in_person_sessions SET status = 'CANCELLED' WHERE agreement_id = $1 AND status IN ('OPEN', 'AWAITING_CONFIRMATION')";
 
 export interface AgreementRecord {
   id: string;
@@ -207,6 +210,7 @@ export async function updateAgreement(input: {
         lock_version = lock_version + 1, updated_at = now() WHERE id = $1
     `, [input.agreementId, input.title, derivedDueAt(current.template_id, fields, input.dueAt), state, number]);
     await client.query("UPDATE parties SET invite_token_hash = NULL, invite_expires_at = NULL WHERE agreement_id = $1 AND role = 'COUNTERPARTY'", [input.agreementId]);
+    await client.query(CANCEL_OPEN_IN_PERSON, [input.agreementId]);
     await client.query("INSERT INTO outbox(topic, payload) VALUES ('pdf.render', $1::jsonb)", [JSON.stringify({ agreementId: input.agreementId, versionId: version.rows[0]!.id })]);
   });
   return getAgreement(input.userId, input.agreementId);
@@ -219,6 +223,7 @@ export async function updateAgreement(input: {
 export async function inviteCounterparty(input: {
   userId: string; agreementId: string; expectedLockVersion: number; email?: string; displayName: string;
 }): Promise<{ agreement: AgreementRecord; inviteExpiresAt: string }> {
+  await requireEmailDelivery();
   await requireLegal(input.userId);
   const email = input.email?.trim().toLowerCase() || null;
   if (email) {
@@ -266,6 +271,7 @@ export async function cancelAgreement(userId: string, agreementId: string, expec
     if (current.lock_version !== expectedLockVersion) throw new ProblemError(412, "Precondition Failed", "The agreement changed. Reload and try again.");
     const next = transition(current.state, "CANCELLED");
     await client.query("UPDATE agreements SET state = $2, lock_version = lock_version + 1, updated_at = now() WHERE id = $1", [agreementId, next]);
+    await client.query(CANCEL_OPEN_IN_PERSON, [agreementId]);
   });
   return getAgreement(userId, agreementId);
 }
@@ -295,6 +301,7 @@ export async function previewObject(userId: string, agreementId: string): Promis
 
 /** Returns the live invitation link for the creator to show as a QR code or copy. Only while it is usable. */
 export async function invitationLink(userId: string, agreementId: string): Promise<{ url: string; expiresAt: string; channel: "EMAIL" | "LINK" }> {
+  await requireEmailDelivery();
   const result = await getPool().query<{ invite_token_ciphertext: Uint8Array | null; invite_expires_at: Date | null; invite_consumed_at: Date | null; invite_channel: "EMAIL" | "LINK"; state: AgreementState }>(`
     SELECT p.invite_token_ciphertext, p.invite_expires_at, p.invite_consumed_at, p.invite_channel, a.state
     FROM agreements a JOIN parties p ON p.agreement_id = a.id AND p.role = 'COUNTERPARTY'

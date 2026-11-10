@@ -1,12 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { SignForm } from "../../components/SignForm";
+import { useCallback, useEffect, useState } from "react";
 
 function csrf(): string {
   const part = document.cookie.split("; ").find((item) => item.startsWith("__Host-theckards_csrf="));
   return part ? decodeURIComponent(part.split("=")[1] ?? "") : "";
 }
+
+async function post(url: string, body?: unknown, extra: Record<string, string> = {}): Promise<{ ok: boolean; data: Record<string, unknown> }> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { ...(body ? { "content-type": "application/json" } : {}), "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID(), ...extra },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await response.json().catch(() => ({})) as Record<string, unknown>;
+  return { ok: response.ok, data };
+}
+
+const detail = (data: Record<string, unknown>, fallback: string) => typeof data.detail === "string" ? data.detail : fallback;
 
 export interface AgreementActionsProps {
   id: string;
@@ -23,8 +34,6 @@ export interface AgreementActionsProps {
 
 export function AgreementActions(props: AgreementActionsProps) {
   const { id, lockVersion, state, renderStatus } = props;
-  const [email, setEmail] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const waitingForSeal = state === "EXECUTED" && !props.finalSealId;
@@ -33,73 +42,121 @@ export function AgreementActions(props: AgreementActionsProps) {
     const timer = window.setTimeout(() => window.location.reload(), 3_000);
     return () => window.clearTimeout(timer);
   }, [renderStatus, waitingForSeal]);
-  async function mutate(path: string, body?: unknown) {
-    setBusy(true); setMessage("");
-    const response = await fetch(`/api/agreements/${id}/${path}`, {
-      method: "POST",
-      headers: { ...(body ? { "content-type": "application/json" } : {}), "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID(), "if-match": `"${lockVersion}"` },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const result = await response.json() as { detail?: string };
-    if (!response.ok) { setMessage(result.detail ?? "Action failed."); setBusy(false); return; }
-    window.location.reload();
-  }
-  const canSign = renderStatus === "READY" && !props.creatorSignedAt && ["DRAFT", "PENDING_SIGNATURES"].includes(state);
+
+  const open = ["DRAFT", "PENDING_SIGNATURES"].includes(state) && renderStatus === "READY";
+  const canSign = open && !props.creatorSignedAt;
+  const canShowQr = open && !!props.creatorSignedAt && !props.counterpartySignedAt;
   return <>
     <section className="card">
       <h2>Signatures</h2>
       <p>You: {props.creatorSignedAt ? <>signed as <strong>{props.creatorSignedName}</strong> on {new Date(props.creatorSignedAt).toUTCString()}</> : "not signed yet"}</p>
-      <p>{props.counterpartyName ?? "Counterparty"}: {props.counterpartySignedAt ? <>signed as <strong>{props.counterpartySignedName}</strong> on {new Date(props.counterpartySignedAt).toUTCString()}</> : props.counterpartyName ? "not signed yet" : "not invited yet"}</p>
+      <p>Other party: {props.counterpartySignedAt ? <>signed as <strong>{props.counterpartySignedName}</strong> on {new Date(props.counterpartySignedAt).toUTCString()}</> : "not signed yet"}</p>
       {waitingForSeal && <p aria-live="polite">Both parties signed. The sealed record is being generated…</p>}
       {props.finalSealId && <p><a className="button" href={`/api/agreements/${id}/documents/final`}>Download sealed PDF</a> <span className="muted">Seal ID {props.finalSealId}</span></p>}
     </section>
-    {canSign && <SignForm
-      codeUrl={`/api/agreements/${id}/otp`}
-      submitUrl={`/api/agreements/${id}/sign`}
-      headers={() => ({ "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID(), "if-match": `"${lockVersion}"` })}
-      onDone={() => window.location.reload()}
-    />}
+    {canSign && <CreatorSignForm id={id} lockVersion={lockVersion} />}
+    {canShowQr && <InPersonPanel id={id} />}
     <section className="card">
       <h2>Actions</h2>
       {renderStatus === "PENDING" && <p aria-live="polite">The PDF preview is being generated…</p>}
       {renderStatus === "FAILED" && <p className="error">Preview generation failed. Support has been notified.</p>}
       {renderStatus === "READY" && <a className="button secondary" href={`/api/agreements/${id}/preview`} target="_blank">Open PDF preview</a>}
-      {state === "DRAFT" && renderStatus === "READY" && <form onSubmit={(event) => { event.preventDefault(); void mutate("invite", { email, displayName }); }}>
-        <h3>Invite the counterparty</h3>
-        <label htmlFor="counterparty-name">Name</label><input id="counterparty-name" required maxLength={120} value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
-        <label htmlFor="counterparty-email">Email (optional)</label><input id="counterparty-email" type="email" maxLength={320} value={email} onChange={(event) => setEmail(event.target.value)} />
-        <p className="muted">With an email, a private one-use link is emailed. Leave it empty to invite in person: you will get a QR code for the other party to scan.</p>
-        <button disabled={busy}>{email ? "Send invitation" : "Create QR invitation"}</button>
-      </form>}
-      {state === "PENDING_SIGNATURES" && !props.counterpartySignedAt && <InviteQr id={id} />}
-      {state === "REVISION_REQUESTED" && <p className="notice">The counterparty requested changes. Edit the terms to create a new version, then invite them again.</p>}
-      {["DRAFT", "PENDING_SIGNATURES", "REVISION_REQUESTED"].includes(state) && <p><button className="danger" disabled={busy} onClick={() => { if (window.confirm("Cancel this agreement?")) void mutate("cancel"); }}>Cancel agreement</button></p>}
+      {state === "REVISION_REQUESTED" && <p className="notice">Changes were requested. Edit the terms to create a new version, then sign again.</p>}
+      {["DRAFT", "PENDING_SIGNATURES", "REVISION_REQUESTED"].includes(state) && <p><button className="danger" disabled={busy} onClick={async () => {
+        if (!window.confirm("Cancel this agreement?")) return;
+        setBusy(true); setMessage("");
+        const result = await post(`/api/agreements/${id}/cancel`, undefined, { "if-match": `"${lockVersion}"` });
+        if (!result.ok) { setMessage(detail(result.data, "Action failed.")); setBusy(false); return; }
+        window.location.reload();
+      }}>Cancel agreement</button></p>}
       {message && <p className="error" role="alert">{message}</p>}
     </section>
   </>;
 }
 
-function InviteQr({ id }: { id: string }) {
-  const [invite, setInvite] = useState<{ url: string; svg: string; expiresAt: string } | null>(null);
-  const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
-  return <div className="card">
-    <h3>Invite in person</h3>
-    {!invite
-      ? <button type="button" className="secondary" onClick={async () => {
-          setError("");
-          const response = await fetch(`/api/agreements/${id}/invite/qr`);
-          const body = await response.json() as { url?: string; svg?: string; expiresAt?: string; detail?: string };
-          if (!response.ok || !body.url || !body.svg || !body.expiresAt) { setError(body.detail ?? "Could not load the invitation."); return; }
-          setInvite({ url: body.url, svg: body.svg, expiresAt: body.expiresAt });
-        }}>Show QR code</button>
-      : <>
-        <p>Ask the other party to scan this code with their phone camera. They review the agreement, verify their email and sign.</p>
-        {/* SVG is generated server-side by the qrcode library from our own URL. */}
-        <div role="img" aria-label="QR code with the private invitation link" style={{ width: 240, maxWidth: "100%", background: "white", padding: 8 }} dangerouslySetInnerHTML={{ __html: invite.svg }} />
-        <p className="muted">Private, single-use link. Expires {new Date(invite.expiresAt).toUTCString()}. Anyone with this code can open the invitation, so show it only to the other party.</p>
-        <button type="button" className="secondary" onClick={async () => { await navigator.clipboard.writeText(invite.url); setCopied(true); }}>{copied ? "Link copied" : "Copy link"}</button>
-      </>}
-    {error && <p className="error" role="alert">{error}</p>}
-  </div>;
+function CreatorSignForm({ id, lockVersion }: { id: string; lockVersion: number }) {
+  const [typedName, setTypedName] = useState("");
+  const [consent, setConsent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  return <form className="card" onSubmit={async (event) => {
+    event.preventDefault();
+    setBusy(true); setMessage("");
+    const result = await post(`/api/agreements/${id}/sign`, { typedName, consent: true }, { "if-match": `"${lockVersion}"` });
+    if (!result.ok) { setMessage(detail(result.data, "Signing failed.")); setBusy(false); return; }
+    window.location.reload();
+  }}>
+    <h2>1. Sign this agreement</h2>
+    <p className="notice">Review before signing. Not legal advice. Theckards records your electronic signature from your signed-in account; it does not verify identity or guarantee payment.</p>
+    <label htmlFor="typed-name">Full name (typed signature)</label>
+    <input id="typed-name" autoComplete="name" required minLength={3} maxLength={120} value={typedName} onChange={(event) => setTypedName(event.target.value)} />
+    <label><input style={{ width: "auto", marginRight: ".5rem" }} type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
+      I agree to sign electronically under the <a href="/legal/esign" target="_blank">Electronic Signature Consent</a>, and I accept the <a href="/legal/terms" target="_blank">Terms</a> and <a href="/legal/privacy" target="_blank">Privacy Policy</a>.</label>
+    <button disabled={busy || !consent || typedName.trim().length < 3}>{busy ? "Signing…" : "Sign"}</button>
+    {message && <p className="error" role="alert">{message}</p>}
+  </form>;
+}
+
+interface CreatorView { status: string; expiresAt: string | null; counterpartyTypedName: string | null; attemptsLeft: number; agreementState: string }
+
+function InPersonPanel({ id }: { id: string }) {
+  const [qr, setQr] = useState<{ svg: string; expiresAt: string } | null>(null);
+  const [view, setView] = useState<CreatorView | null>(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const refresh = useCallback(async () => {
+    const response = await fetch(`/api/agreements/${id}/in-person`);
+    if (!response.ok) return;
+    const next = await response.json() as CreatorView;
+    setView(next);
+    if (next.agreementState === "EXECUTED") window.location.reload();
+  }, [id]);
+
+  useEffect(() => {
+    if (!qr) return;
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [qr, refresh]);
+
+  async function start() {
+    setBusy(true); setMessage(""); setCode("");
+    const result = await post(`/api/agreements/${id}/in-person`);
+    setBusy(false);
+    if (!result.ok || typeof result.data.svg !== "string") { setMessage(detail(result.data, "Could not create the QR code.")); return; }
+    setQr({ svg: result.data.svg, expiresAt: String(result.data.expiresAt) });
+  }
+
+  const awaiting = view?.status === "AWAITING_CONFIRMATION";
+  const ended = view && ["EXPIRED", "CANCELLED"].includes(view.status);
+  return <section className="card">
+    <h2>2. Sign with the other party, in person</h2>
+    {!qr && <>
+      <p>With the other party next to you, show them a QR code. They scan it with their phone camera, review the agreement and sign on their own phone. Their phone then shows a 6-digit code that you type here.</p>
+      <button type="button" disabled={busy} onClick={start}>Show QR code</button>
+    </>}
+    {qr && !awaiting && !ended && <>
+      <p>Ask the other party to scan this code with their phone camera.</p>
+      {/* SVG is generated server-side by the qrcode library from our own URL. */}
+      <div role="img" aria-label="QR code to sign this agreement" style={{ width: 260, maxWidth: "100%", background: "white", padding: 8 }} dangerouslySetInnerHTML={{ __html: qr.svg }} />
+      <p className="muted">Single use. Expires {new Date(qr.expiresAt).toLocaleTimeString()}. Show it only to the other party.</p>
+    </>}
+    {awaiting && <form onSubmit={async (event) => {
+      event.preventDefault();
+      setBusy(true); setMessage("");
+      const result = await post(`/api/agreements/${id}/in-person/confirm`, { code });
+      if (!result.ok) { setMessage(detail(result.data, "Confirmation failed.")); setBusy(false); setCode(""); void refresh(); return; }
+      window.location.reload();
+    }}>
+      <p><strong>{view?.counterpartyTypedName}</strong> signed on their device.</p>
+      <label htmlFor="confirm-code">Type the 6-digit code shown on their screen</label>
+      <input id="confirm-code" inputMode="numeric" autoComplete="off" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} style={{ fontSize: "1.5rem", letterSpacing: ".3em", maxWidth: 220 }} />
+      <p className="muted">Only confirm if the person in front of you is the one who signed. {view?.attemptsLeft} attempt(s) left.</p>
+      <button disabled={busy || code.length !== 6}>{busy ? "Confirming…" : "Confirm signature"}</button>
+    </form>}
+    {ended && <><p>{view?.status === "EXPIRED" ? "The code expired." : "This QR code is no longer valid."}</p><button type="button" disabled={busy} onClick={start}>Show a new QR code</button></>}
+    {message && <p className="error" role="alert">{message}</p>}
+  </section>;
 }
