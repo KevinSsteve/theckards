@@ -57,12 +57,16 @@ async function requireDossierLegal(userId: string): Promise<void> {
 export async function listDossiers(userId: string, agreementId: string): Promise<{ legalReady: boolean; canRequest: boolean; items: DossierView[] }> {
   const pool = getPool();
   const m = await member(pool, userId, agreementId);
+  // The hash shown to the party comes from the sealed document, not from the request row: `sealed_documents` is
+  // append-only and its hash is the one the receipt was signed over, while a request's own columns are still
+  // writable until the build finishes.
   const result = await pool.query<{
     id: string; party_id: string; status: DossierStatus; bytes: number | null; sha256: string | null;
     sealed_document_id: string | null; created_at: Date; ready_at: Date | null;
   }>(`
-    SELECT id, party_id, status, bytes, sha256, sealed_document_id, created_at, ready_at
-    FROM dossier_requests WHERE agreement_id = $1 AND party_id = $2 ORDER BY created_at DESC LIMIT 20
+    SELECT r.id, r.party_id, r.status, r.bytes, d.sha256, r.sealed_document_id, r.created_at, r.ready_at
+    FROM dossier_requests r LEFT JOIN sealed_documents d ON d.id = r.sealed_document_id
+    WHERE r.agreement_id = $1 AND r.party_id = $2 ORDER BY r.created_at DESC LIMIT 20
   `, [agreementId, m.partyId]);
   const legalReady = await dossierLegalReady();
   const pending = result.rows.filter((row) => row.status === "PENDING").length;

@@ -7,10 +7,10 @@ const query = vi.fn(async (sql: string, values: unknown[] = []) => {
   calls.push({ sql, values });
   if (sql.includes("JOIN parties p ON p.agreement_id = a.id")) return { rows: tables.member };
   if (sql.includes("COALESCE(s.typed_name, p.display_name)")) return { rows: tables.parties };
-  if (sql.includes("FROM dossier_requests WHERE agreement_id = $1 AND party_id = $2")) return { rows: tables.mine };
+  if (sql.includes("ORDER BY r.created_at DESC LIMIT 20")) return { rows: tables.mine };
   if (sql.includes("FROM dossier_requests WHERE party_id = $1 AND client_key = $2")) return { rows: tables.existing };
   if (sql.includes("count(*) FROM dossier_requests")) return { rows: [{ count: String(tables.pending) }] };
-  if (sql.includes("FROM dossier_requests r LEFT JOIN sealed_documents d")) return { rows: tables.artifact };
+  if (sql.includes("WHERE r.id = $1")) return { rows: tables.artifact };
   if (sql.includes("INSERT INTO dossier_requests")) {
     return { rows: [{ id: "dr-1", status: "PENDING", bytes: null, sha256: null, sealed_document_id: null, created_at: new Date("2026-11-10T20:00:00Z"), ready_at: null }], rowCount: 1 };
   }
@@ -58,14 +58,24 @@ describe("dossier access is limited to the agreement's parties (IDOR)", () => {
     tables.member = [memberRow("EXECUTED", "p-counterparty")];
     tables.artifact = [];
     await expect(dossierArtifact("u-counterparty", A, "dr-1")).rejects.toMatchObject({ status: 404 });
-    const lookup = calls.find((call) => call.sql.includes("FROM dossier_requests r LEFT JOIN sealed_documents d"));
+    const lookup = calls.find((call) => call.sql.includes("WHERE r.id = $1"));
     expect(lookup?.values).toEqual(["dr-1", A, "p-counterparty"]);
   });
 
   it("lists only the caller's own dossiers", async () => {
     await listDossiers("u-creator", A);
-    const list = calls.find((call) => call.sql.includes("FROM dossier_requests WHERE agreement_id = $1 AND party_id = $2"));
+    const list = calls.find((call) => call.sql.includes("ORDER BY r.created_at DESC LIMIT 20"));
     expect(list?.values).toEqual([A, "p-creator"]);
+  });
+
+  // The panel shows the hash a party is told to compare, so it must come from the append-only sealed document.
+  it("reports the hash the receipt was signed over, not the request's own column", async () => {
+    tables.mine = [{ id: "dr-1", party_id: "p-creator", status: "READY", bytes: 4096, sha256: "c".repeat(64), sealed_document_id: "seal-1", created_at: new Date("2026-11-10T20:00:00Z"), ready_at: new Date("2026-11-10T20:01:00Z") }];
+    const view = await listDossiers("u-creator", A);
+    expect(view.items[0]!.sha256).toBe("c".repeat(64));
+    const list = calls.find((call) => call.sql.includes("ORDER BY r.created_at DESC LIMIT 20"));
+    expect(list?.sql).toContain("LEFT JOIN sealed_documents d ON d.id = r.sealed_document_id");
+    expect(list?.sql).toContain("d.sha256");
   });
 });
 
