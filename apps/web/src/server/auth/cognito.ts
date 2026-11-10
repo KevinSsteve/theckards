@@ -105,6 +105,33 @@ export async function exchangeAuthorizationCode(code: string, transaction: AuthT
   return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token, claims };
 }
 
+export type RefreshOutcome = "VALID" | "REVOKED" | "UNKNOWN";
+
+/**
+ * Asks Cognito whether the session's refresh token is still valid. Disabled users, global sign-out and
+ * revoked tokens return invalid_grant -> REVOKED. Network or service errors -> UNKNOWN (retry later).
+ */
+export async function checkRefreshToken(refreshToken: string): Promise<RefreshOutcome> {
+  const basic = Buffer.from(`${env().USER_POOL_CLIENT_ID}:${env().USER_POOL_CLIENT_SECRET}`).toString("base64");
+  try {
+    const response = await fetch(new URL("/oauth2/token", env().COGNITO_DOMAIN), {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", authorization: `Basic ${basic}` },
+      body: new URLSearchParams({ grant_type: "refresh_token", client_id: env().USER_POOL_CLIENT_ID, refresh_token: refreshToken }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (response.ok) return "VALID";
+    if (response.status === 400) {
+      const body = await response.json().catch(() => ({})) as { error?: string };
+      if (body.error === "invalid_grant" || body.error === "unauthorized_client") return "REVOKED";
+    }
+    return "UNKNOWN";
+  } catch {
+    return "UNKNOWN";
+  }
+}
+
 export function groupsFromClaims(claims: CognitoClaims): readonly string[] {
   return Array.isArray(claims["cognito:groups"]) ? claims["cognito:groups"] : [];
 }

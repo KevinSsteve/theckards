@@ -362,6 +362,126 @@ paths:
         '200': { description: Linked }
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/case:
+    get:
+      summary: Party-only view of the latest case (reason, proposals, addendum and signatures)
+      operationId: getAgreementCase
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+      responses:
+        '200': { description: Case view }
+        '404': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Open a case on an executed agreement (EXECUTED -> IN_CASE). Theckards does not decide the outcome.
+      operationId: openCase
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3, maxLength: 2000 } } }
+      responses:
+        '201': { description: Case opened }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/case/proposals:
+    post:
+      summary: Add a proposal (insert-only; supersedes the same party's previous proposal)
+      operationId: addCaseProposal
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [body], properties: { body: { type: string, minLength: 3, maxLength: 4000 } } }
+      responses:
+        '201': { description: Proposal recorded }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/case/proposals/{proposalId}/accept:
+    post:
+      summary: The other party accepts the author's current proposal; creates the resolution addendum to sign
+      operationId: acceptCaseProposal
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - name: proposalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201': { description: Addendum created }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/case/addendum/preview:
+    get:
+      summary: Party-only exact PDF of the addendum to sign
+      operationId: getAddendumPreview
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+      responses:
+        '200': { description: PDF }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/case/addendum/sign:
+    post:
+      summary: Sign the resolution addendum from the signed-in account; sealed when both parties sign (IN_CASE -> RESOLVED)
+      operationId: signAddendum
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [typedName, consent]
+              properties:
+                typedName: { type: string, minLength: 3, maxLength: 120 }
+                consent: { type: boolean, enum: [true] }
+      responses:
+        '201': { description: Signature recorded }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/case/withdraw:
+    post:
+      summary: The party that opened the case withdraws it before both sign an addendum (IN_CASE -> EXECUTED)
+      operationId: withdrawCase
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Withdrawn }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/documents/addendum:
+    get:
+      summary: Download the sealed resolution addendum (party-only)
+      operationId: downloadSealedAddendum
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+      responses:
+        '200': { description: Sealed PDF }
+        '404': { $ref: '#/components/responses/Problem' }
   /api/agreements/{id}/documents/final:
     get:
       summary: Download the sealed final PDF

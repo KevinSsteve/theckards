@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
 import { DeleteMessageCommand, ReceiveMessageCommand, SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
-import type { SealedReceipt, TemplateId } from "@theckards/domain";
+import type { AgreementSection, SealedReceipt, TemplateId } from "@theckards/domain";
 import type pg from "pg";
 import { decryptText } from "./crypto.js";
 import { pool, transaction } from "./db.js";
@@ -155,6 +155,89 @@ async function notifyRevision(payload: Record<string, unknown>): Promise<void> {
     `${row.name ?? "The counterparty"} asked for changes to "${row.title}". Open Theckards to edit the terms and send a new invitation:\n${baseUrl}/dashboard`);
 }
 
+
+// ---------- Resolution addenda (S5 part 2) ----------
+
+interface AddendumJobRow {
+  id: string; agreement_id: string; case_id: string; status: string; render_status: string; sections: AgreementSection[];
+  content_sha256: string; document_sha256: string | null; created_at: Date; title: string; template_id: TemplateId; version_id: string; state: string;
+}
+
+async function loadAddendum(addendumId: string): Promise<AddendumJobRow> {
+  const result = await pool.query<AddendumJobRow>(`
+    SELECT d.id, d.agreement_id, d.case_id, d.status, d.render_status, d.sections, d.content_sha256, d.document_sha256, d.created_at,
+      a.title, a.template_id, a.state, v.id AS version_id
+    FROM addenda d JOIN agreements a ON a.id = d.agreement_id
+    JOIN agreement_versions v ON v.agreement_id = a.id AND v.number = a.current_version_number
+    WHERE d.id = $1
+  `, [addendumId]);
+  const row = result.rows[0];
+  if (!row) throw new Error("Addendum not found");
+  return row;
+}
+
+const addendumDocument = (row: AddendumJobRow) => ({
+  subtitle: `Resolution addendum · ${row.created_at.toISOString().slice(0, 10)}`,
+  subject: `Resolution addendum ${row.id} to agreement ${row.agreement_id}`,
+  sections: row.sections,
+});
+
+async function renderAddendumPreview(payload: Record<string, unknown>): Promise<void> {
+  const row = await loadAddendum(String(payload.addendumId ?? ""));
+  if (row.render_status === "READY" || row.status === "CANCELLED") return;
+  const bytes = await renderAgreementPdf({
+    agreementId: row.agreement_id, version: 1, title: `Resolution addendum: ${row.title}`, templateId: row.template_id, fields: {},
+    createdAt: row.created_at, document: addendumDocument(row),
+  });
+  const digest = sha256Hex(bytes);
+  const key = `agreements/${row.agreement_id}/addenda/${row.id}/preview.pdf`;
+  await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: bytes, ContentType: "application/pdf", Metadata: { sha256: digest, addendum: row.id } }));
+  await pool.query("UPDATE addenda SET render_status = 'READY', document_s3_key = $2, document_sha256 = $3 WHERE id = $1 AND render_status <> 'READY'", [row.id, key, digest]);
+}
+
+async function sealAddendum(payload: Record<string, unknown>): Promise<void> {
+  const row = await loadAddendum(String(payload.addendumId ?? ""));
+  if (row.status === "SEALED") return;
+  if (row.status !== "AWAITING_SIGNATURES" || !row.document_sha256) throw new Error("Addendum is not ready for sealing");
+  const signatures = await pool.query<{ role: string; typed_name: string; signed_at: Date; document_sha256: string }>(`
+    SELECT p.role, s.typed_name, s.signed_at, s.document_sha256 FROM addendum_signatures s JOIN parties p ON p.id = s.party_id
+    WHERE s.addendum_id = $1 ORDER BY p.role DESC
+  `, [row.id]);
+  const roles = new Set(signatures.rows.map((s) => s.role));
+  if (!roles.has("CREATOR") || !roles.has("COUNTERPARTY")) throw new Error("Both parties must sign the addendum");
+  if (!signatures.rows.every((s) => s.document_sha256 === row.document_sha256)) throw new Error("Addendum signatures do not match the document hash");
+  const sealId = sealIdFor(row.agreement_id, row.id, "ADDENDUM");
+  const sealedAt = new Date(Math.max(...signatures.rows.map((s) => s.signed_at.getTime())));
+  const signers: FinalSigner[] = signatures.rows.map((s) => ({
+    role: s.role === "CREATOR" ? "Creator" : "Counterparty", typedName: s.typed_name, signedAt: s.signed_at, method: "ACCOUNT_SESSION",
+  }));
+  const bytes = await renderAgreementPdf(
+    { agreementId: row.agreement_id, version: 1, title: `Resolution addendum: ${row.title}`, templateId: row.template_id, fields: {}, createdAt: row.created_at, document: addendumDocument(row) },
+    { sealId, sealedAt, contentSha256: row.content_sha256, signedDocumentSha256: row.document_sha256, signers, verifyUrl: `${baseUrl}/verify?seal=${sealId}`, watermark: true },
+  );
+  const fileSha256 = sha256Hex(bytes);
+  const prefix = `agreements/${row.agreement_id}/addenda/${row.id}/sealed-${sealId}`;
+  await s3.send(new PutObjectCommand({ Bucket: bucket, Key: `${prefix}.pdf`, Body: bytes, ContentType: "application/pdf", Metadata: { sha256: fileSha256, seal: sealId } }));
+  const { receipt, signature, keyId } = await signReceipt(
+    { id: sealId, kind: "ADDENDUM", sha256: fileSha256, content_sha256: row.content_sha256, sealed_at: sealedAt.toISOString() },
+    process.env.SEAL_KEY_ARN!,
+  );
+  const stored = await transaction(async (client) => {
+    await client.query(`
+      INSERT INTO sealed_documents(id, agreement_id, version_id, kind, s3_key, sha256, content_sha256, kms_key_id, signature, receipt, watermarked, sealed_at)
+      VALUES ($1, $2, $3, 'ADDENDUM', $4, $5, $6, $7, $8, $9::jsonb, true, $10) ON CONFLICT DO NOTHING
+    `, [sealId, row.agreement_id, row.version_id, `${prefix}.pdf`, fileSha256, row.content_sha256, keyId, signature, JSON.stringify(receipt), sealedAt]);
+    const locked = await client.query<{ status: string }>("SELECT status FROM addenda WHERE id = $1 FOR UPDATE", [row.id]);
+    if (locked.rows[0]?.status === "AWAITING_SIGNATURES") {
+      await client.query("UPDATE addenda SET status = 'SEALED', sealed_document_id = $2 WHERE id = $1", [row.id, sealId]);
+      await client.query("UPDATE cases SET status = 'RESOLVED', closed_at = now() WHERE id = $1 AND status = 'OPEN'", [row.case_id]);
+      await client.query("UPDATE agreements SET state = 'RESOLVED', lock_version = lock_version + 1, updated_at = now() WHERE id = $1 AND state = 'IN_CASE'", [row.agreement_id]);
+    }
+    return (await client.query<{ receipt: SealedReceipt }>("SELECT receipt FROM sealed_documents WHERE id = $1", [sealId])).rows[0]!.receipt;
+  });
+  await s3.send(new PutObjectCommand({ Bucket: bucket, Key: `${prefix}.receipt.json`, Body: JSON.stringify(stored, null, 2), ContentType: "application/json" }));
+}
+
 export interface QueueEnvelope {
   id: string;
   topic: string;
@@ -251,6 +334,8 @@ export async function processEnvelope(envelope: QueueEnvelope): Promise<void> {
     case "seal.final": await sealFinal(envelope.payload); break;
     case "email.receipt": await sendReceipt(envelope.payload); break;
     case "email.revision_requested": await notifyRevision(envelope.payload); break;
+    case "addendum.render": await renderAddendumPreview(envelope.payload); break;
+    case "seal.addendum": await sealAddendum(envelope.payload); break;
     default: throw new Error("Unsupported job topic");
   }
   await pool.query("INSERT INTO processed_jobs(job_id, topic) VALUES ($1, $2) ON CONFLICT (job_id) DO NOTHING", [envelope.id, envelope.topic]);

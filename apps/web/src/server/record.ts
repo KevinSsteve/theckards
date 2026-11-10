@@ -17,7 +17,7 @@ import { currentApprovedLegal, userHasCurrentConsents } from "./legal";
 const RECORD_STATES: readonly AgreementState[] = ["EXECUTED", "COMPLETED", "IN_CASE", "RESOLVED"];
 const CONFIRMABLE_STATES: readonly AgreementState[] = ["EXECUTED", "IN_CASE"];
 
-interface Member {
+export interface Member {
   agreementId: string;
   state: AgreementState;
   templateId: TemplateId;
@@ -29,7 +29,7 @@ interface Member {
   parties: { id: string; role: "CREATOR" | "COUNTERPARTY"; name: string }[];
 }
 
-async function member(client: pg.Pool | pg.PoolClient, userId: string, agreementId: string, lock = false): Promise<Member> {
+export async function member(client: pg.Pool | pg.PoolClient, userId: string, agreementId: string, lock = false): Promise<Member> {
   const result = await client.query<{
     id: string; state: AgreementState; template_id: TemplateId; due_at: Date | null; version_id: string; fields: Record<string, unknown>;
     party_id: string; party_role: "CREATOR" | "COUNTERPARTY";
@@ -68,7 +68,7 @@ export interface ConfirmationSlotView {
 
 export interface TimelineEntry {
   at: string;
-  type: "VERSION" | "SIGNATURE" | "SEAL" | "CONFIRMATION" | "MESSAGE" | "NOTE";
+  type: "VERSION" | "SIGNATURE" | "SEAL" | "CONFIRMATION" | "MESSAGE" | "NOTE" | "CASE" | "PROPOSAL";
   partyName: string | null;
   mine: boolean;
   text: string;
@@ -125,6 +125,12 @@ export async function getRecord(userId: string, agreementId: string): Promise<Re
     UNION ALL SELECT created_at, 'CONFIRMATION', party_id, kind || COALESCE(' — ' || note, '') FROM confirmations WHERE agreement_id = $1
     UNION ALL SELECT created_at, 'MESSAGE', party_id, body FROM messages WHERE agreement_id = $1
     UNION ALL SELECT created_at, 'NOTE', party_id, body FROM record_notes WHERE agreement_id = $1
+    UNION ALL SELECT opened_at, 'CASE', opened_by_party_id, 'Case opened: ' || reason FROM cases WHERE agreement_id = $1
+    UNION ALL SELECT closed_at, 'CASE', closed_by_party_id, CASE status WHEN 'WITHDRAWN' THEN 'Case withdrawn' ELSE 'Case resolved by a sealed addendum signed by both parties' END
+      FROM cases WHERE agreement_id = $1 AND closed_at IS NOT NULL
+    UNION ALL SELECT created_at, 'PROPOSAL', party_id, 'Proposal: ' || body FROM proposals WHERE agreement_id = $1
+    UNION ALL SELECT pa.created_at, 'PROPOSAL', pa.party_id, 'Accepted the other party''s proposal' FROM proposal_acceptances pa JOIN proposals p ON p.id = pa.proposal_id WHERE p.agreement_id = $1
+    UNION ALL SELECT s.signed_at, 'SIGNATURE', s.party_id, 'Signed the resolution addendum as ' || s.typed_name FROM addendum_signatures s JOIN addenda d ON d.id = s.addendum_id WHERE d.agreement_id = $1
     ORDER BY at DESC LIMIT 300
   `, [agreementId]);
   const timeline = events.rows.map((row) => ({

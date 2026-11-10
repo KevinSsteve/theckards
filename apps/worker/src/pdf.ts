@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import fontkit from "@pdf-lib/fontkit";
-import { renderAgreement, type TemplateId } from "@theckards/domain";
+import { renderAgreement, type AgreementSection, type TemplateId } from "@theckards/domain";
 import { PDFDocument, PDFFont, PDFPage, degrees, rgb } from "pdf-lib";
 import QRCode from "qrcode";
 
@@ -58,6 +58,8 @@ export async function renderAgreementPdf(input: {
   templateId: TemplateId;
   fields: unknown;
   createdAt: Date;
+  /** Other sealed documents (resolution addenda) reuse the same layout and signature certificate. */
+  document?: { subtitle: string; subject: string; sections: readonly AgreementSection[] };
 }, final?: FinalOptions): Promise<Uint8Array> {
   const pdf = await PDFDocument.create({ updateMetadata: false });
   pdf.registerFontkit(fontkit);
@@ -69,7 +71,7 @@ export async function renderAgreementPdf(input: {
   pdf.setProducer("Theckards 1");
   pdf.setCreationDate(fixedDate);
   pdf.setModificationDate(fixedDate);
-  pdf.setSubject(`Agreement ${input.agreementId}, version ${input.version}`);
+  pdf.setSubject(input.document?.subject ?? `Agreement ${input.agreementId}, version ${input.version}`);
   pdf.setKeywords(["agreement", "verifiable record"]);
 
   const width = 612;
@@ -95,9 +97,9 @@ export async function renderAgreementPdf(input: {
 
   newPage();
   drawLines(input.title, 22);
-  drawLines(`Template: ${input.templateId.replaceAll("_", " ")} · Version ${input.version}`, 9, rgb(0.35, 0.4, 0.38));
+  drawLines(input.document?.subtitle ?? `Template: ${input.templateId.replaceAll("_", " ")} · Version ${input.version}`, 9, rgb(0.35, 0.4, 0.38));
   y -= 12;
-  for (const section of renderAgreement(input.templateId, input.fields)) {
+  for (const section of input.document?.sections ?? renderAgreement(input.templateId, input.fields)) {
     ensure(45);
     drawLines(section.heading, 14, rgb(0.08, 0.42, 0.29));
     for (const paragraph of section.paragraphs) drawLines(paragraph);

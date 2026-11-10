@@ -2,6 +2,7 @@ import { agreementStateCheckSql } from "@theckards/domain";
 import { ESIGN_V1, NOTICE_V1, PRIVACY_V1, TERMS_V1 } from "./legal-v1.js";
 import { ESIGN_V2, PRIVACY_V2, PRIVACY_V2_REPLACEMENTS, TERMS_V2, TERMS_V2_REPLACEMENTS } from "./legal-v2.js";
 import { PRIVACY_V3_REPLACEMENTS } from "./legal-v3.js";
+import { ESIGN_V3_REPLACEMENTS, PRIVACY_V4_REPLACEMENTS } from "./legal-v4.js";
 
 const lit = (value: string) => `$legal$${value}$legal$`;
 const replaced = (column: string, pairs: ReadonlyArray<readonly [string, string]>) =>
@@ -10,6 +11,12 @@ const draftV2FromApprovedV1 = (type: string, pairs: ReadonlyArray<readonly [stri
 INSERT INTO legal_documents(document_type, locale, version, status, title, body_md)
 SELECT document_type, locale, 2, 'DRAFT', title, ${replaced("body_md", pairs)}
 FROM legal_documents WHERE document_type = '${type}' AND locale = 'en-US' AND version = 1 AND status = 'APPROVED'
+ON CONFLICT (document_type, locale, version) DO NOTHING;`;
+
+const nextDraftFromApproved = (type: string, from: number, pairs: ReadonlyArray<readonly [string, string]>) => `
+INSERT INTO legal_documents(document_type, locale, version, status, title, body_md)
+SELECT document_type, locale, ${from + 1}, 'DRAFT', title, ${replaced("body_md", pairs)}
+FROM legal_documents WHERE document_type = '${type}' AND locale = 'en-US' AND version = ${from} AND status = 'APPROVED'
 ON CONFLICT (document_type, locale, version) DO NOTHING;`;
 
 export interface Migration {
@@ -565,6 +572,97 @@ INSERT INTO legal_documents(document_type, locale, version, status, title, body_
 SELECT document_type, locale, 3, 'DRAFT', title, ${replaced("body_md", PRIVACY_V3_REPLACEMENTS)}
 FROM legal_documents WHERE document_type = 'PRIVACY' AND locale = 'en-US' AND version = 2 AND status = 'APPROVED'
 ON CONFLICT (document_type, locale, version) DO NOTHING;
+`,
+  },
+  {
+    id: "0011",
+    name: "cases_proposals_addenda_session_recheck",
+    // S5 part 2. The platform never decides a case: an addendum exists only when the other party accepts a
+    // proposal and both sign it (G2). Proposals, acceptances and addendum signatures are insert-only.
+    sql: `
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS cognito_checked_at timestamptz;
+
+CREATE TABLE IF NOT EXISTS cases (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agreement_id uuid NOT NULL REFERENCES agreements(id),
+  opened_by_party_id uuid NOT NULL REFERENCES parties(id),
+  reason text NOT NULL CHECK (char_length(reason) BETWEEN 3 AND 2000),
+  status text NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'WITHDRAWN', 'RESOLVED')),
+  evidence_window_ends_at timestamptz NOT NULL,
+  opened_at timestamptz NOT NULL DEFAULT now(),
+  closed_at timestamptz,
+  closed_by_party_id uuid REFERENCES parties(id),
+  CHECK ((status = 'OPEN') = (closed_at IS NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS cases_one_open_per_agreement ON cases(agreement_id) WHERE status = 'OPEN';
+
+CREATE TABLE IF NOT EXISTS proposals (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id uuid NOT NULL REFERENCES cases(id),
+  agreement_id uuid NOT NULL REFERENCES agreements(id),
+  party_id uuid NOT NULL REFERENCES parties(id),
+  body text NOT NULL CHECK (char_length(body) BETWEEN 3 AND 4000),
+  client_key char(64) NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (party_id, client_key)
+);
+CREATE INDEX IF NOT EXISTS proposals_case_idx ON proposals(case_id, party_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS proposal_acceptances (
+  proposal_id uuid PRIMARY KEY REFERENCES proposals(id),
+  party_id uuid NOT NULL REFERENCES parties(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS addenda (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id uuid NOT NULL UNIQUE REFERENCES cases(id),
+  agreement_id uuid NOT NULL REFERENCES agreements(id),
+  proposal_id uuid NOT NULL UNIQUE REFERENCES proposals(id),
+  sections jsonb NOT NULL,
+  content_sha256 char(64) NOT NULL,
+  status text NOT NULL DEFAULT 'AWAITING_SIGNATURES' CHECK (status IN ('AWAITING_SIGNATURES', 'SEALED', 'CANCELLED')),
+  render_status text NOT NULL DEFAULT 'PENDING' CHECK (render_status IN ('PENDING', 'READY', 'FAILED')),
+  document_s3_key text,
+  document_sha256 char(64),
+  sealed_document_id uuid REFERENCES sealed_documents(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS addendum_signatures (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  addendum_id uuid NOT NULL REFERENCES addenda(id),
+  party_id uuid NOT NULL REFERENCES parties(id),
+  typed_name text NOT NULL CHECK (char_length(typed_name) BETWEEN 3 AND 120),
+  esign_document_id uuid NOT NULL REFERENCES legal_documents(id),
+  document_sha256 char(64) NOT NULL,
+  ip_ciphertext bytea NOT NULL,
+  user_agent_ciphertext bytea NOT NULL,
+  signed_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (addendum_id, party_id)
+);
+
+CREATE OR REPLACE FUNCTION addenda_content_immutable() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' OR NEW.sections IS DISTINCT FROM OLD.sections OR NEW.content_sha256 IS DISTINCT FROM OLD.content_sha256
+     OR NEW.proposal_id IS DISTINCT FROM OLD.proposal_id OR NEW.case_id IS DISTINCT FROM OLD.case_id
+     OR (OLD.document_sha256 IS NOT NULL AND NEW.document_sha256 IS DISTINCT FROM OLD.document_sha256) THEN
+    RAISE EXCEPTION 'addendum content is immutable' USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS addenda_content_immutable ON addenda;
+CREATE TRIGGER addenda_content_immutable BEFORE UPDATE OR DELETE ON addenda FOR EACH ROW EXECUTE FUNCTION addenda_content_immutable();
+
+DROP TRIGGER IF EXISTS proposals_append_only ON proposals;
+CREATE TRIGGER proposals_append_only BEFORE UPDATE OR DELETE ON proposals FOR EACH ROW EXECUTE FUNCTION prevent_append_only_change();
+DROP TRIGGER IF EXISTS proposal_acceptances_append_only ON proposal_acceptances;
+CREATE TRIGGER proposal_acceptances_append_only BEFORE UPDATE OR DELETE ON proposal_acceptances FOR EACH ROW EXECUTE FUNCTION prevent_append_only_change();
+DROP TRIGGER IF EXISTS addendum_signatures_append_only ON addendum_signatures;
+CREATE TRIGGER addendum_signatures_append_only BEFORE UPDATE OR DELETE ON addendum_signatures FOR EACH ROW EXECUTE FUNCTION prevent_append_only_change();
+${nextDraftFromApproved("PRIVACY", 3, PRIVACY_V4_REPLACEMENTS)}
+${nextDraftFromApproved("ESIGN", 2, ESIGN_V3_REPLACEMENTS)}
 `,
   },
 ] as const;

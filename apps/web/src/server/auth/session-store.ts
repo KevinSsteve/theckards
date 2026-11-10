@@ -2,6 +2,7 @@ import type pg from "pg";
 import type { AdminRole, SessionKind } from "@theckards/domain";
 import { DEFAULT_SESSION_POLICY } from "@theckards/domain";
 import { decryptText, encryptText, hmac, randomToken } from "../crypto";
+import { checkRefreshToken } from "./cognito";
 import { getPool, inTransaction } from "../db";
 
 export interface SessionIdentity {
@@ -65,15 +66,39 @@ export async function createSession(
   return { token, csrf, absoluteExpiresAt };
 }
 
+/** Maximum time a session survives after the Cognito user is disabled or globally signed out. */
+export const COGNITO_RECHECK_MINUTES = 5;
+
+async function sessionStillValidInCognito(sessionHash: string, refreshCiphertext: Uint8Array | null): Promise<boolean> {
+  if (!refreshCiphertext) {
+    // Without a refresh token the session cannot be revalidated: end it rather than trust it indefinitely.
+    await revokeSession(sessionHash);
+    return false;
+  }
+  const outcome = await checkRefreshToken(await decryptText(refreshCiphertext, "cognito-refresh-token"));
+  if (outcome === "REVOKED") {
+    await revokeSession(sessionHash);
+    return false;
+  }
+  if (outcome === "VALID") {
+    await getPool().query("UPDATE sessions SET cognito_checked_at = now() WHERE session_hash = $1", [sessionHash]);
+  } else {
+    // Cognito unreachable: keep the session (availability) and retry on the next request.
+    console.warn(JSON.stringify({ level: "warn", msg: "cognito session check unavailable" }));
+  }
+  return true;
+}
+
 export async function loadSession(token: string | undefined, expectedKind: Extract<SessionKind, "USER" | "ADMIN">): Promise<SessionIdentity | null> {
   if (!token) return null;
   const result = await getPool().query<{
     session_hash: string; user_id: string; cognito_sub: string; kind: SessionKind; groups: string[];
     csrf_hash: string; recent_auth_at: Date; access_token_ciphertext: Uint8Array | null;
-    state: string; admin_role: AdminRole | null;
+    state: string; admin_role: AdminRole | null; refresh_token_ciphertext: Uint8Array | null; needs_check: boolean;
   }>(`
     SELECT s.session_hash, s.user_id, u.cognito_sub, s.kind, s.groups, s.csrf_hash,
-           s.recent_auth_at, s.access_token_ciphertext, u.state, au.role AS admin_role
+           s.recent_auth_at, s.access_token_ciphertext, u.state, au.role AS admin_role, s.refresh_token_ciphertext,
+           (s.cognito_checked_at IS NULL OR s.cognito_checked_at < now() - interval '${COGNITO_RECHECK_MINUTES} minutes') AS needs_check
     FROM sessions s
     JOIN users u ON u.id = s.user_id
     LEFT JOIN admin_users au ON au.user_id = u.id AND au.state = 'ACTIVE'
@@ -82,6 +107,7 @@ export async function loadSession(token: string | undefined, expectedKind: Extra
   `, [hmac(token, "auth"), expectedKind]);
   const row = result.rows[0];
   if (!row || row.state !== "ACTIVE") return null;
+  if (row.needs_check && !(await sessionStillValidInCognito(row.session_hash, row.refresh_token_ciphertext))) return null;
   const idleMinutes = expectedKind === "ADMIN" ? DEFAULT_SESSION_POLICY.adminIdleMinutes : DEFAULT_SESSION_POLICY.userIdleMinutes;
   await getPool().query(
     "UPDATE sessions SET last_seen_at = now(), inactivity_expires_at = now() + ($2::text || ' minutes')::interval WHERE session_hash = $1",

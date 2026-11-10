@@ -142,3 +142,22 @@ describe("privacy v3 draft (S5 record entries)", () => {
     expect(legalApprovalBlockers(v3)).toEqual([]);
   });
 });
+
+describe("cases and addenda migration (S5 part 2)", () => {
+  const schema = migrations.find((migration) => migration.id === "0011")?.sql ?? "";
+  it("keeps proposals, acceptances and addendum signatures insert-only and addendum text immutable", () => {
+    for (const trigger of ["proposals_append_only", "proposal_acceptances_append_only", "addendum_signatures_append_only", "addenda_content_immutable"]) expect(schema).toContain(trigger);
+    expect(schema).toContain("cases_one_open_per_agreement ON cases(agreement_id) WHERE status = 'OPEN'");
+    expect(schema).not.toMatch(/winner|decision|verdict|at_fault/i);
+  });
+  it("derives PRIVACY v4 and ESIGN v3 drafts from approved text whose anchors all exist", async () => {
+    const { PRIVACY_V3_REPLACEMENTS } = await import("./legal-v3.js");
+    const { PRIVACY_V4_REPLACEMENTS, ESIGN_V3_REPLACEMENTS } = await import("./legal-v4.js");
+    const v3 = PRIVACY_V3_REPLACEMENTS.reduce((body, [from, to]) => body.replace(from, to), PRIVACY_V2);
+    for (const [from, to] of PRIVACY_V4_REPLACEMENTS) { expect(v3).toContain(from); expect(to).not.toBe(from); }
+    for (const [from, to] of ESIGN_V3_REPLACEMENTS) { expect(ESIGN_V2).toContain(from); expect(to).not.toBe(from); }
+    expect(schema).toContain("4, 'DRAFT'");
+    expect(schema).toContain("3, 'DRAFT'");
+    expect(schema).not.toMatch(/status = 'APPROVED'\s*,/);
+  });
+});

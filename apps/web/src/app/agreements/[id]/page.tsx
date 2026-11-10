@@ -3,6 +3,7 @@ import { getAgreement } from "../../../server/agreements";
 import { currentUserSession } from "../../../server/auth/current";
 import { userHasCurrentConsents } from "../../../server/legal";
 import { AgreementActions } from "./AgreementActions";
+import { CasePanel } from "./CasePanel";
 import { RecordPanel } from "./RecordPanel";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ export default async function AgreementPage({ params }: { params: Promise<{ id: 
         counterpartyName={agreement.counterpartyName} counterpartySignedName={agreement.counterpartySignedName}
         counterpartySignedAt={agreement.counterpartySignedAt} finalSealId={agreement.finalSealId} viewerIsCreator={agreement.viewerIsCreator} />
       {["EXECUTED", "COMPLETED", "IN_CASE", "RESOLVED"].includes(agreement.state) && <RecordPanel id={agreement.id} />}
+      {["EXECUTED", "IN_CASE", "RESOLVED"].includes(agreement.state) && <CasePanel id={agreement.id} />}
     </main>
   </>;
 }

@@ -72,3 +72,16 @@ describe("MIME builder", () => {
     expect(raw).toContain("multipart/mixed");
   });
 });
+
+describe("resolution addendum PDF", () => {
+  const document = { subtitle: "Resolution addendum · 2026-11-11", subject: "Addendum", sections: [{ heading: "Accepted proposal", paragraphs: ["Seller refunds USD 100."] }] };
+  it("renders deterministically from the stored sections, independent of template fields", async () => {
+    const [a, b] = await Promise.all([
+      renderAgreementPdf({ ...input, fields: {}, document }, { ...final, signers: final.signers.map((s) => ({ ...s, method: "ACCOUNT_SESSION" as const })) }),
+      renderAgreementPdf({ ...input, fields: {}, document }, { ...final, signers: final.signers.map((s) => ({ ...s, method: "ACCOUNT_SESSION" as const })) }),
+    ]);
+    expect(sha(a)).toBe(sha(b));
+    const other = await renderAgreementPdf({ ...input, fields: {}, document: { ...document, sections: [{ heading: "Accepted proposal", paragraphs: ["Seller refunds USD 101."] }] } }, final);
+    expect(sha(other)).not.toBe(sha(a));
+  });
+});
