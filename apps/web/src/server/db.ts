@@ -1,21 +1,41 @@
 import pg from "pg";
+import { env } from "./env";
 
-let pool: pg.Pool | undefined;
+const globalPool = globalThis as typeof globalThis & { __theckardsPool?: pg.Pool };
 
-export function getPool(): pg.Pool | undefined {
-  if (pool) return pool;
-  const host = process.env.DB_HOST;
-  if (!host) return undefined;
-  pool = new pg.Pool({
-    host,
-    port: Number(process.env.DB_PORT ?? 5432),
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME ?? "theckards",
-    ssl: { rejectUnauthorized: false },
-    max: 5,
-    connectionTimeoutMillis: 3000,
-    statement_timeout: 5000,
+export function getPool(): pg.Pool {
+  if (globalPool.__theckardsPool) return globalPool.__theckardsPool;
+  const config = env();
+  globalPool.__theckardsPool = new pg.Pool({
+    host: config.DB_HOST,
+    port: config.DB_PORT,
+    user: config.DB_USER,
+    password: config.DB_PASSWORD,
+    database: config.DB_NAME,
+    ssl: { rejectUnauthorized: true },
+    max: 10,
+    connectionTimeoutMillis: 3_000,
+    statement_timeout: 5_000,
+    idleTimeoutMillis: 30_000,
+    application_name: `theckards-web-${config.APP_ENV}`,
   });
-  return pool;
+  globalPool.__theckardsPool.on("error", (error) => {
+    console.error(JSON.stringify({ level: "error", msg: "idle database client error", error: error.name }));
+  });
+  return globalPool.__theckardsPool;
+}
+
+export async function inTransaction<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const value = await work(client);
+    await client.query("COMMIT");
+    return value;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

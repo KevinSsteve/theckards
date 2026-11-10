@@ -2,13 +2,32 @@
   "name": "@theckards/web",
   "version": "0.1.0",
   "private": true,
-  "scripts": { "dev": "next dev", "build": "next build", "start": "next start", "typecheck": "tsc --noEmit", "test": "vitest --run --passWithNoTests" },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest --run --passWithNoTests"
+  },
   "dependencies": {
+    "@aws-sdk/client-appconfig": "^3.1164.0",
+    "@aws-sdk/client-appconfigdata": "^3.1164.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.1164.0",
+    "@aws-sdk/client-kms": "^3.1164.0",
+    "@theckards/database": "workspace:*",
     "@theckards/domain": "workspace:*",
+    "jose": "^6.2.16",
     "next": "^15.1.0",
     "pg": "^8.13.0",
+    "pino": "^10.4.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "zod": "^3.25.76"
   },
-  "devDependencies": { "@types/node": "^22.0.0", "@types/pg": "^8.11.0", "@types/react": "^19.0.0", "@types/react-dom": "^19.0.0" }
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
+  }
 }

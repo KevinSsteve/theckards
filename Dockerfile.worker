@@ -2,8 +2,10 @@ FROM public.ecr.aws/docker/library/node:22-slim AS build
 RUN corepack enable
 WORKDIR /repo
 COPY . .
-RUN pnpm install --frozen-lockfile --ignore-scripts=false || pnpm install
-RUN pnpm --filter @theckards/domain build && pnpm --filter @theckards/worker build
+RUN pnpm install --frozen-lockfile --ignore-scripts=false
+RUN pnpm --filter @theckards/domain build \
+ && pnpm --filter @theckards/database build \
+ && pnpm --filter @theckards/worker build
 RUN pnpm --filter @theckards/worker --prod deploy /out --legacy
 
 FROM public.ecr.aws/docker/library/node:22-slim

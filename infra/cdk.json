@@ -5,6 +5,7 @@
     "rootDomain": "linkealls.com",
     "rootZoneId": "Z014291339V6CZQXYQ124",
     "subdomain": "theckards",
+    "useAppDbCredentials": "true",
     "envName": "prod",
     "@aws-cdk/aws-iam:minimizePolicies": true,
     "@aws-cdk/core:checkSecretUsage": true,

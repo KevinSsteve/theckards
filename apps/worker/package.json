@@ -3,7 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": { "build": "tsc -p tsconfig.build.json", "start": "node dist/index.js", "typecheck": "tsc --noEmit", "test": "vitest --run --passWithNoTests" },
-  "dependencies": { "@aws-sdk/client-sqs": "^3.700.0", "@theckards/domain": "workspace:*" },
-  "devDependencies": { "@types/node": "^22.0.0" }
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest --run --passWithNoTests"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.700.0",
+    "@theckards/database": "workspace:*",
+    "@theckards/domain": "workspace:*",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1"
+  }
 }

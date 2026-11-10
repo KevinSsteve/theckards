@@ -2,8 +2,11 @@ FROM public.ecr.aws/docker/library/node:22-slim AS build
 RUN corepack enable
 WORKDIR /repo
 COPY . .
-RUN pnpm install --frozen-lockfile --ignore-scripts=false || pnpm install
-RUN pnpm --filter @theckards/domain build && pnpm --filter @theckards/web build
+RUN pnpm install --frozen-lockfile --ignore-scripts=false
+RUN pnpm lint && pnpm -r typecheck && pnpm -r test
+RUN pnpm --filter @theckards/domain build \
+ && pnpm --filter @theckards/database build \
+ && pnpm --filter @theckards/web build
 
 FROM public.ecr.aws/docker/library/node:22-slim
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 NEXT_TELEMETRY_DISABLED=1

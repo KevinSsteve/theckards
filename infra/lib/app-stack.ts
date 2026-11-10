@@ -33,6 +33,7 @@ export interface AppStackProps extends cdk.StackProps {
   base: BaseStack;
   envName: string;
   imageTag: string;
+  useAppDbCredentials: boolean;
   alertEmail?: string;
   githubRepo?: string;
 }
@@ -136,6 +137,18 @@ export class AppStack extends cdk.Stack {
       cloudwatchLogsExports: ["postgresql", "upgrade"], cloudwatchLogsRetention: logs.RetentionDays.THREE_MONTHS,
     });
 
+    const appDbSecret = new secretsmanager.Secret(this, "AppDbSecret", {
+      secretName: `theckards/${envName}/db-app`,
+      encryptionKey: dataKey,
+      generateSecretString: {
+        secretStringTemplate: JSON.stringify({ username: "theckards_app" }),
+        generateStringKey: "password",
+        passwordLength: 40,
+        excludePunctuation: true,
+      },
+    });
+    appDbSecret.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
+
     // ---------- Cognito (Essentials) ----------
     const userPool = new cognito.UserPool(this, "UserPool", {
       userPoolName: `${p}-users`,
@@ -159,6 +172,12 @@ export class AppStack extends cdk.Stack {
       authFlows: {},
     });
     const poolDomain = userPool.addDomain("Domain", { cognitoDomain: { domainPrefix: `theckards-${this.account.slice(-6)}` } });
+    const userPoolClientSecret = new secretsmanager.Secret(this, "UserPoolClientSecret", {
+      secretName: `theckards/${envName}/cognito-client`,
+      encryptionKey: dataKey,
+      secretStringValue: userPoolClient.userPoolClientSecret,
+    });
+    userPoolClientSecret.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
 
     // ---------- Email (SES) ----------
     const sesTopic = new sns.Topic(this, "SesEvents", { topicName: `${p}-ses-events`, masterKey: alertKey, enforceSSL: true });
@@ -185,6 +204,16 @@ export class AppStack extends cdk.Stack {
       secretName: `theckards/${envName}/origin-verify`, encryptionKey: dataKey,
       generateSecretString: { excludePunctuation: true, passwordLength: 40 },
     });
+    const authHmacSecret = new secretsmanager.Secret(this, "AuthHmacSecret", {
+      secretName: `theckards/${envName}/auth-hmac`, encryptionKey: dataKey,
+      generateSecretString: { excludePunctuation: true, passwordLength: 64 },
+    });
+    const emailHashSecret = new secretsmanager.Secret(this, "EmailHashSecret", {
+      secretName: `theckards/${envName}/email-hash`, encryptionKey: dataKey,
+      generateSecretString: { excludePunctuation: true, passwordLength: 64 },
+    });
+    authHmacSecret.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
+    emailHashSecret.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
 
     // ---------- Certificate + DNS ----------
     const cert = new acm.Certificate(this, "Cert", {
@@ -200,14 +229,34 @@ export class AppStack extends cdk.Stack {
     });
     const webSg = new ec2.SecurityGroup(this, "WebSg", { vpc, description: "web tasks" });
     const workerSg = new ec2.SecurityGroup(this, "WorkerSg", { vpc, description: "worker tasks" });
+    const migrationSg = new ec2.SecurityGroup(this, "MigrationSg", { vpc, description: "one-off database migration tasks" });
     albSg.addEgressRule(webSg, ec2.Port.tcp(3000), "to web tasks");
     webSg.addIngressRule(albSg, ec2.Port.tcp(3000), "from ALB");
-    for (const sg of [webSg, workerSg]) {
+    for (const sg of [webSg, workerSg, migrationSg]) {
       dbSg.addIngressRule(sg, ec2.Port.tcp(5432), "tasks to Postgres");
     }
 
     // ---------- ECS ----------
     const cluster = new ecs.Cluster(this, "Cluster", { clusterName: `${p}-cluster`, vpc, containerInsightsV2: ecs.ContainerInsights.ENABLED });
+
+    // ---------- AppConfig (feature flags; later versions are owned by the Admin dashboard) ----------
+    const acApp = new appconfig.CfnApplication(this, "AcApp", { name: "theckards" });
+    const acEnv = new appconfig.CfnEnvironment(this, "AcEnv", { applicationId: acApp.ref, name: envName });
+    const acProfile = new appconfig.CfnConfigurationProfile(this, "AcProfile", {
+      applicationId: acApp.ref, name: "feature-flags", locationUri: "hosted", type: "AWS.AppConfig.FeatureFlags",
+    });
+    const acVersion = new appconfig.CfnHostedConfigurationVersion(this, "AcVersion", {
+      applicationId: acApp.ref, configurationProfileId: acProfile.ref,
+      content: JSON.stringify(FEATURE_FLAGS), contentType: "application/json",
+    });
+    const appConfigStrategyId = envName === "prod"
+      ? "AppConfig.Linear50PercentEvery30Seconds"
+      : "AppConfig.AllAtOnce";
+    new appconfig.CfnDeployment(this, "AcDeploy", {
+      applicationId: acApp.ref, environmentId: acEnv.ref, configurationProfileId: acProfile.ref,
+      configurationVersion: acVersion.ref, deploymentStrategyId: appConfigStrategyId,
+    });
+    for (const resource of [acApp, acEnv, acProfile, acVersion]) resource.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
 
     const commonEnv: Record<string, string> = {
       NODE_ENV: "production",
@@ -217,15 +266,19 @@ export class AppStack extends cdk.Stack {
       JOBS_QUEUE_URL: jobs.queueUrl,
       DOCUMENTS_BUCKET: documents.bucketName,
       SEAL_KEY_ARN: sealKey.keyArn,
+      DATA_KEY_ARN: dataKey.keyArn,
       USER_POOL_ID: userPool.userPoolId, USER_POOL_CLIENT_ID: userPoolClient.userPoolClientId,
       COGNITO_DOMAIN: poolDomain.baseUrl(),
       SCHEDULER_GROUP: "theckards",
       APPCONFIG_APPLICATION: "theckards", APPCONFIG_ENVIRONMENT: envName, APPCONFIG_PROFILE: "feature-flags",
+      APPCONFIG_APPLICATION_ID: acApp.ref, APPCONFIG_ENVIRONMENT_ID: acEnv.ref, APPCONFIG_PROFILE_ID: acProfile.ref,
+      APPCONFIG_DEPLOYMENT_STRATEGY_ID: appConfigStrategyId,
       SES_CONFIGURATION_SET: configSet.configurationSetName,
     };
+    const dbCredentialSecret = props.useAppDbCredentials ? appDbSecret : db.secret!;
     const dbSecrets = {
-      DB_USER: ecs.Secret.fromSecretsManager(db.secret!, "username"),
-      DB_PASSWORD: ecs.Secret.fromSecretsManager(db.secret!, "password"),
+      DB_USER: ecs.Secret.fromSecretsManager(dbCredentialSecret, "username"),
+      DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentialSecret, "password"),
     };
 
     const mkTask = (name: string, cpu: number, mem: number) => {
@@ -249,11 +302,25 @@ export class AppStack extends cdk.Stack {
     const webTask = mkTask("web", 1024, 2048);
     jobs.grantSendMessages(webTask.taskRole);
     webTask.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["kms:GetPublicKey", "kms:DescribeKey"], resources: [sealKey.keyArn] }));
+    webTask.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["cognito-idp:AdminGetUser"], resources: [userPool.userPoolArn] }));
+    webTask.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: ["appconfig:CreateHostedConfigurationVersion", "appconfig:StartDeployment"],
+      resources: [
+        `arn:${this.partition}:appconfig:${this.region}:${this.account}:application/${acApp.ref}`,
+        `arn:${this.partition}:appconfig:${this.region}:${this.account}:application/${acApp.ref}/*`,
+        `arn:${this.partition}:appconfig:${this.region}:${this.account}:deploymentstrategy/*`,
+      ],
+    }));
     const webLogs = new logs.LogGroup(this, "WebLogs", { logGroupName: `/theckards/${envName}/web`, retention: logs.RetentionDays.THREE_MONTHS, removalPolicy: cdk.RemovalPolicy.RETAIN });
     webTask.addContainer("web", {
       image: ecs.ContainerImage.fromEcrRepository(base.webRepo, props.imageTag),
       // ECS overrides HOSTNAME with the task hostname; Next.js must bind all interfaces for the localhost health check.
-      environment: { ...commonEnv, HOSTNAME: "0.0.0.0", PORT: "3000" }, secrets: dbSecrets,
+      environment: { ...commonEnv, HOSTNAME: "0.0.0.0", PORT: "3000" }, secrets: {
+        ...dbSecrets,
+        USER_POOL_CLIENT_SECRET: ecs.Secret.fromSecretsManager(userPoolClientSecret),
+        AUTH_HMAC_SECRET: ecs.Secret.fromSecretsManager(authHmacSecret),
+        EMAIL_HASH_SECRET: ecs.Secret.fromSecretsManager(emailHashSecret),
+      },
       portMappings: [{ containerPort: 3000 }], stopTimeout: cdk.Duration.seconds(30),
       readonlyRootFilesystem: false,
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: "web", logGroup: webLogs }),
@@ -306,6 +373,30 @@ export class AppStack extends cdk.Stack {
       cooldown: cdk.Duration.minutes(2),
     });
 
+    // One-off migrations run with the RDS administrator secret. No service uses this task definition.
+    const migrationTask = new ecs.FargateTaskDefinition(this, "MigrationTask", {
+      family: `${p}-migration`, cpu: 512, memoryLimitMiB: 1024,
+      runtimePlatform: { cpuArchitecture: ecs.CpuArchitecture.X86_64, operatingSystemFamily: ecs.OperatingSystemFamily.LINUX },
+    });
+    const migrationLogs = new logs.LogGroup(this, "MigrationLogs", {
+      logGroupName: `/theckards/${envName}/migration`, retention: logs.RetentionDays.THREE_MONTHS,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+    migrationTask.addContainer("migration", {
+      image: ecs.ContainerImage.fromEcrRepository(base.workerRepo, props.imageTag),
+      command: ["node", "dist/migrate.js"],
+      environment: {
+        NODE_ENV: "production", DB_HOST: db.dbInstanceEndpointAddress,
+        DB_PORT: db.dbInstanceEndpointPort, DB_NAME: "theckards",
+      },
+      secrets: {
+        DB_ADMIN_USER: ecs.Secret.fromSecretsManager(db.secret!, "username"),
+        DB_ADMIN_PASSWORD: ecs.Secret.fromSecretsManager(db.secret!, "password"),
+        APP_DB_PASSWORD: ecs.Secret.fromSecretsManager(appDbSecret, "password"),
+      },
+      logging: ecs.LogDrivers.awsLogs({ streamPrefix: "migration", logGroup: migrationLogs }),
+    });
+
     // ---------- WAF (CloudFront scope) ----------
     const vis = (n: string) => ({ sampledRequestsEnabled: true, cloudWatchMetricsEnabled: true, metricName: n });
     const managed = (name: string, prio: number) => ({
@@ -351,21 +442,6 @@ export class AppStack extends cdk.Stack {
     new route53.ARecord(this, "AliasA", { zone: base.zone, target: route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(dist)) });
     new route53.AaaaRecord(this, "AliasAAAA", { zone: base.zone, target: route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(dist)) });
     new route53.ARecord(this, "OriginA", { zone: base.zone, recordName: originDomain, target: route53.RecordTarget.fromAlias(new targets.LoadBalancerTarget(alb)) });
-
-    // ---------- AppConfig (feature flags; edited later by the Admin dashboard) ----------
-    const acApp = new appconfig.CfnApplication(this, "AcApp", { name: "theckards" });
-    const acEnv = new appconfig.CfnEnvironment(this, "AcEnv", { applicationId: acApp.ref, name: envName });
-    const acProfile = new appconfig.CfnConfigurationProfile(this, "AcProfile", {
-      applicationId: acApp.ref, name: "feature-flags", locationUri: "hosted", type: "AWS.AppConfig.FeatureFlags",
-    });
-    const acVersion = new appconfig.CfnHostedConfigurationVersion(this, "AcVersion", {
-      applicationId: acApp.ref, configurationProfileId: acProfile.ref,
-      content: JSON.stringify(FEATURE_FLAGS), contentType: "application/json",
-    });
-    new appconfig.CfnDeployment(this, "AcDeploy", {
-      applicationId: acApp.ref, environmentId: acEnv.ref, configurationProfileId: acProfile.ref,
-      configurationVersion: acVersion.ref, deploymentStrategyId: "AppConfig.AllAtOnce",
-    });
 
     // ---------- Scheduler ----------
     new scheduler.CfnScheduleGroup(this, "SchedGroup", { name: "theckards" });
@@ -420,6 +496,11 @@ export class AppStack extends cdk.Stack {
     new cdk.CfnOutput(this, "SealKeyArn", { value: sealKey.keyArn });
     new cdk.CfnOutput(this, "JobsQueueUrl", { value: jobs.queueUrl });
     new cdk.CfnOutput(this, "SchedulerRoleArn", { value: schedulerRole.roleArn });
+    new cdk.CfnOutput(this, "AppConfigIds", { value: cdk.Fn.join(",", [acApp.ref, acEnv.ref, acProfile.ref]) });
+    new cdk.CfnOutput(this, "ClusterName", { value: cluster.clusterName });
+    new cdk.CfnOutput(this, "MigrationTaskDefinitionArn", { value: migrationTask.taskDefinitionArn });
+    new cdk.CfnOutput(this, "MigrationSecurityGroupId", { value: migrationSg.securityGroupId });
+    new cdk.CfnOutput(this, "PrivateSubnetIds", { value: cdk.Fn.join(",", vpc.privateSubnets.map((subnet) => subnet.subnetId)) });
 
     // ---------- cdk-nag suppressions (each justified; see docs/adr) ----------
     NagSuppressions.addStackSuppressions(this, [

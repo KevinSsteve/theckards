@@ -21,6 +21,7 @@ if (ctx("imageTag")) {
   new AppStack(app, `Theckards-${envName}`, {
     env, base, envName,
     imageTag: ctx("imageTag")!,
+    useAppDbCredentials: (ctx("useAppDbCredentials") ?? "true") === "true",
     alertEmail: ctx("alertEmail"),
     githubRepo: ctx("githubRepo"),
     terminationProtection: true,

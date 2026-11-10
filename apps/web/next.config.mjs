@@ -8,11 +8,14 @@ export default {
   poweredByHeader: false,
   transpilePackages: ["@theckards/domain"],
   async headers() {
-    return [{ source: "/(.*)", headers: [
+    return [
+      { source: "/admin/:path*", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] },
+      { source: "/(.*)", headers: [
       { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       { key: "X-Frame-Options", value: "DENY" },
-    ] }];
+      ] },
+    ];
   },
 };

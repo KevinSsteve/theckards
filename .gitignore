@@ -4,3 +4,4 @@ cdk.out
 .next
 *.log
 .env*
+*.tsbuildinfo

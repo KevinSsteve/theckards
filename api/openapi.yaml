@@ -1,0 +1,56 @@
+openapi: 3.1.0
+info:
+  title: Theckards API
+  version: 0.2.0
+servers:
+  - url: https://theckards.linkealls.com
+paths:
+  /api/auth/login:
+    get:
+      security: []
+      responses: { '302': { description: Redirect to Cognito managed login }, '429': { $ref: '#/components/responses/Problem' } }
+  /api/auth/callback:
+    get:
+      security: []
+      responses: { '302': { description: Session created }, '400': { $ref: '#/components/responses/Problem' } }
+  /api/auth/logout:
+    post:
+      security: [{ userSession: [] }]
+      responses: { '200': { description: Session revoked }, '401': { $ref: '#/components/responses/Problem' } }
+  /api/legal/consent:
+    post:
+      security: [{ userSession: [] }]
+      responses: { '200': { description: Current legal versions accepted }, '401': { $ref: '#/components/responses/Problem' } }
+  /api/admin/settings:
+    get:
+      security: [{ adminSession: [] }]
+      responses: { '200': { description: Settings }, '403': { $ref: '#/components/responses/Problem' } }
+  /api/admin/settings/{key}:
+    patch:
+      security: [{ adminSession: [] }]
+      parameters: [{ name: key, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Setting updated }, '403': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' } }
+  /api/admin/legal:
+    get:
+      security: [{ adminSession: [] }]
+      responses: { '200': { description: Legal documents }, '403': { $ref: '#/components/responses/Problem' } }
+components:
+  securitySchemes:
+    userSession: { type: apiKey, in: cookie, name: __Host-theckards_session }
+    adminSession: { type: apiKey, in: cookie, name: __Host-theckards_admin_session }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, detail, request_id]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        request_id: { type: string }
+  responses:
+    Problem:
+      description: Problem Details response
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

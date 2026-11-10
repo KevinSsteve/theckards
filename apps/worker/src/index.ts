@@ -21,7 +21,7 @@ const server = http.createServer((req, res) => {
 });
 server.listen(Number(process.env.PORT ?? 8080));
 
-async function handle(topic: string, _payload: unknown): Promise<void> {
+async function handle(topic: string): Promise<void> {
   // Handlers are added by later specs (pdf.render, seal.final, email.*, stripe.*, ...).
   log("warn", "no handler for topic", { topic });
 }
@@ -38,7 +38,7 @@ async function loop(): Promise<void> {
       lastPoll = Date.now();
       for (const m of out.Messages ?? []) {
         const body = JSON.parse(m.Body ?? "{}") as { topic?: string; payload?: unknown };
-        await handle(body.topic ?? "unknown", body.payload);
+        await handle(body.topic ?? "unknown");
         await sqs.send(new DeleteMessageCommand({ QueueUrl: queueUrl, ReceiptHandle: m.ReceiptHandle }));
       }
     } catch (err) {
