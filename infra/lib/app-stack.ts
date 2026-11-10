@@ -183,6 +183,7 @@ export class AppStack extends cdk.Stack {
     const sesTopic = new sns.Topic(this, "SesEvents", { topicName: `${p}-ses-events`, masterKey: alertKey, enforceSSL: true });
     const configSet = new ses.ConfigurationSet(this, "ConfigSet", {
       configurationSetName: `${p}-default`, reputationMetrics: true, tlsPolicy: ses.ConfigurationSetTlsPolicy.REQUIRE, sendingEnabled: true,
+      suppressionReasons: ses.SuppressionReasons.BOUNCES_AND_COMPLAINTS,
     });
     configSet.addEventDestination("Events", {
       destination: ses.EventDestination.snsTopic(sesTopic),
