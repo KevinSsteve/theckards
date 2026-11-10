@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const session = await currentUserSession();
   if (!session) redirect("/api/auth/login");
-  if (!(await userHasCurrentConsents(session.userId))) redirect("/legal/consent");
+  if (!(await userHasCurrentConsents(session.userId))) redirect("/legal/consent?next=/dashboard");
   const agreements = await listAgreements(session.userId);
   return <>
     <header className="topbar"><a className="brand" href="/dashboard">Theckards</a><nav className="actions"><a href="/account">Account</a><LogoutButton /></nav></header>

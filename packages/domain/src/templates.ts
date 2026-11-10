@@ -30,7 +30,15 @@ const paymentMethod = z.enum(["cash", "bank_transfer", "payment_app", "other"]);
 const shortText = z.string().trim().min(2).max(200);
 const longText = z.string().trim().min(3).max(2_000);
 
+/**
+ * Which side the creator is on. Optional in the schema only so that versions created before roles existed still
+ * render exactly as sealed; new and edited agreements must set it (see missingRequiredFields).
+ */
+export const SaleRoleSchema = z.enum(["seller", "buyer"]);
+export const ServiceRoleSchema = z.enum(["provider", "client"]);
+
 export const PurchaseSaleFieldsSchema = z.object({
+  creatorRole: SaleRoleSchema.optional(),
   itemDescription: longText,
   price: money,
   paymentMethod,
@@ -40,6 +48,7 @@ export const PurchaseSaleFieldsSchema = z.object({
 }).strict();
 
 export const ServicesFieldsSchema = z.object({
+  creatorRole: ServiceRoleSchema.optional(),
   serviceDescription: longText,
   amount: money,
   paymentMethod,
@@ -81,6 +90,8 @@ export const templateDefinitions: Readonly<Record<TemplateId, TemplateDefinition
   purchase_sale: {
     id: "purchase_sale", version: 1, title: "Purchase and sale", summary: "Record the sale and delivery of an item.",
     fields: [
+      { key: "creatorRole", label: "Your role", type: "select", required: true, options: [
+        { value: "seller", label: "I am the seller" }, { value: "buyer", label: "I am the buyer" }] },
       { key: "itemDescription", label: "Item description", type: "textarea", required: true, maxLength: 2_000 },
       { key: "price", label: "Price (USD)", type: "money", required: true },
       { key: "paymentMethod", label: "Payment method", type: "select", required: true, options: paymentOptions },
@@ -92,6 +103,8 @@ export const templateDefinitions: Readonly<Record<TemplateId, TemplateDefinition
   services: {
     id: "services", version: 1, title: "Services", summary: "Record a service, deliverables, dates and direct payment terms.",
     fields: [
+      { key: "creatorRole", label: "Your role", type: "select", required: true, options: [
+        { value: "provider", label: "I provide the service" }, { value: "client", label: "I am the client" }] },
       { key: "serviceDescription", label: "Service description", type: "textarea", required: true, maxLength: 2_000 },
       { key: "amount", label: "Fee (USD)", type: "money", required: true },
       { key: "paymentMethod", label: "Payment method", type: "select", required: true, options: paymentOptions },
@@ -138,6 +151,18 @@ function paymentLabel(value: string): string {
   return paymentOptions.find((option) => option.value === value)?.label ?? "Other direct method";
 }
 
+function partiesSection([creator, counterparty]: readonly [string, string]): AgreementSection {
+  return { heading: "Parties", paragraphs: [`The creator of this agreement is the ${creator}. The counterparty is the ${counterparty}. Each party's typed name and signature are recorded on the signature certificate.`] };
+}
+
+/** Fields the current template definition requires but the schema keeps optional for older versions. */
+export function missingRequiredFields(templateId: TemplateId, fields: unknown): string[] {
+  const value = (fields ?? {}) as Record<string, unknown>;
+  return templateDefinitions[templateId].fields
+    .filter((field) => field.required && (value[field.key] === undefined || value[field.key] === ""))
+    .map((field) => field.key);
+}
+
 export function renderAgreement(templateId: TemplateId, fields: unknown): AgreementSection[] {
   const data = validateTemplateFields(templateId, fields);
   const notice: AgreementSection = {
@@ -147,6 +172,7 @@ export function renderAgreement(templateId: TemplateId, fields: unknown): Agreem
   if (templateId === "purchase_sale") {
     const value = data as PurchaseSaleFields;
     return [
+      ...(value.creatorRole ? [partiesSection(value.creatorRole === "seller" ? ["seller", "buyer"] : ["buyer", "seller"])] : []),
       { heading: "Item", paragraphs: [`The seller agrees to sell, and the buyer agrees to purchase, the following item: ${value.itemDescription}${value.serialNumber ? ` Identifier: ${value.serialNumber}.` : ""}`] },
       { heading: "Price and payment", paragraphs: [`The agreed price is USD ${value.price}. Payment will be made by ${paymentLabel(value.paymentMethod).toLowerCase()}. Payment takes place directly between the parties; Theckards does not receive or process it.`] },
       { heading: "Delivery", paragraphs: [`The item is to be delivered on ${value.deliveryDate} by or at: ${value.deliveryMethod}.`] },
@@ -156,6 +182,7 @@ export function renderAgreement(templateId: TemplateId, fields: unknown): Agreem
   if (templateId === "services") {
     const value = data as ServicesFields;
     return [
+      ...(value.creatorRole ? [partiesSection(value.creatorRole === "provider" ? ["provider", "client"] : ["client", "provider"])] : []),
       { heading: "Services", paragraphs: [`The provider agrees to perform: ${value.serviceDescription}`] },
       { heading: "Deliverables and dates", paragraphs: [`Work begins on ${value.startDate} and is due on ${value.completionDate}. Deliverables: ${value.deliverables}`] },
       { heading: "Fee and payment", paragraphs: [`The agreed fee is USD ${value.amount}, paid by ${paymentLabel(value.paymentMethod).toLowerCase()} directly between the parties. Theckards does not receive or process it.`] },

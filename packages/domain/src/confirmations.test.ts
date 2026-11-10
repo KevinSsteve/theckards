@@ -32,3 +32,40 @@ describe("confirmation outcome", () => {
     expect(expectedSlots("general", false)).toHaveLength(2);
   });
 });
+
+describe("party roles and wording", () => {
+  it("one party alone can never reach MUTUAL, for any template, role or payment", async () => {
+    const { confirmationRole, kindsForRole } = await import("./confirmations.js");
+    fc.assert(fc.property(
+      fc.constantFrom<"purchase_sale" | "services" | "general">("purchase_sale", "services", "general"),
+      fc.constantFrom(undefined, "seller", "buyer", "provider", "client"),
+      fc.boolean(), fc.constantFrom<"CREATOR" | "COUNTERPARTY">("CREATOR", "COUNTERPARTY"),
+      (template, creatorRole, pay, party) => {
+        const slots = expectedSlots(template, pay);
+        const role = confirmationRole(template, party, creatorRole ? { creatorRole } : {});
+        const mine = kindsForRole(slots, role).map((kind) => ({ kind, role }));
+        expect(outcome(slots, mine, due, now)).not.toBe("MUTUAL");
+      },
+    ));
+  });
+  it("the two parties always get opposite roles", async () => {
+    const { confirmationRole } = await import("./confirmations.js");
+    for (const [template, creatorRole] of [["purchase_sale", "seller"], ["purchase_sale", "buyer"], ["services", "provider"], ["services", "client"], ["general", undefined]] as const) {
+      const fields = creatorRole ? { creatorRole } : {};
+      expect(confirmationRole(template, "CREATOR", fields)).not.toBe(confirmationRole(template, "COUNTERPARTY", fields));
+    }
+    expect(confirmationRole("purchase_sale", "CREATOR", { creatorRole: "buyer" })).toBe("BUYER");
+  });
+  it("payment pairs only when an amount above zero was agreed", async () => {
+    const { involvesPayment } = await import("./confirmations.js");
+    expect(involvesPayment("purchase_sale", { price: "350.00" })).toBe(true);
+    expect(involvesPayment("purchase_sale", { price: "0.00" })).toBe(false);
+    expect(involvesPayment("general", {})).toBe(false);
+  });
+  it("labels never imply verification, guarantee or a decision (G2, G3, G5)", async () => {
+    const { CONFIRMATION_LABELS, OUTCOME_LABELS } = await import("./confirmations.js");
+    const text = [...Object.values(CONFIRMATION_LABELS), ...Object.values(OUTCOME_LABELS)].join(" ");
+    expect(text).not.toMatch(/verified|guarantee|protected|breach|default|winner|fault|valid/i);
+    expect(CONFIRMATION_LABELS.PAYMENT_SENT).toContain("declared");
+  });
+});

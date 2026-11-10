@@ -61,3 +61,45 @@ export function outcome(
   const deadline = dueAt ? dueAt.getTime() + graceDays * 86_400_000 : null;
   return deadline !== null && now.getTime() > deadline ? "NONE" : "PENDING";
 }
+
+/** Maps the signing party to its role in the template. Legacy versions without a role default to seller/provider. */
+export function confirmationRole(template: TemplateId, party: "CREATOR" | "COUNTERPARTY", fields: Record<string, unknown>): PartyRole {
+  const creatorRole = typeof fields.creatorRole === "string" ? fields.creatorRole : undefined;
+  if (template === "purchase_sale") {
+    const creatorIsBuyer = creatorRole === "buyer";
+    return (party === "CREATOR") !== creatorIsBuyer ? "SELLER" : "BUYER";
+  }
+  if (template === "services") {
+    const creatorIsClient = creatorRole === "client";
+    return (party === "CREATOR") !== creatorIsClient ? "PROVIDER" : "CLIENT";
+  }
+  return party;
+}
+
+/** Payment pairs are expected only when the agreed amount is greater than zero. */
+export function involvesPayment(template: TemplateId, fields: Record<string, unknown>): boolean {
+  const amount = template === "purchase_sale" ? fields.price : template === "services" ? fields.amount : undefined;
+  return typeof amount === "string" && Number(amount) > 0;
+}
+
+export function kindsForRole(slots: readonly Slot[], role: PartyRole): ConfirmationKind[] {
+  return slots.filter((slot) => slot.role === role).map((slot) => slot.kind);
+}
+
+/** Neutral wording: declarations by a party, never verified by Theckards (G1, G3, G5). */
+export const CONFIRMATION_LABELS: Readonly<Record<ConfirmationKind, string>> = {
+  ITEM_DELIVERED: "Item delivered",
+  ITEM_RECEIVED: "Item received",
+  SERVICE_DONE: "Service completed",
+  SERVICE_ACCEPTED: "Service accepted",
+  PAYMENT_SENT: "Payment sent (declared)",
+  PAYMENT_RECEIVED: "Payment received (declared)",
+  FULFILLED: "Commitment fulfilled",
+};
+
+export const OUTCOME_LABELS: Readonly<Record<Outcome, string>> = {
+  MUTUAL: "Every expected confirmation was declared by the responsible party.",
+  ONE_SIDED: "Some expected confirmations are still waiting for a party.",
+  PENDING: "Pending. No confirmation recorded yet.",
+  NONE: "No confirmation recorded.",
+};

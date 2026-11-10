@@ -117,3 +117,28 @@ describe("corrective legal v2 migration", () => {
     expect(PRIVACY_V2).not.toMatch(/send verification codes, invitations and receipts/i);
   });
 });
+
+describe("record migration (S5 part 1)", () => {
+  const schema = migrations.find((migration) => migration.id === "0009")?.sql ?? "";
+  it("keeps confirmations, messages and notes insert-only and bounded", () => {
+    for (const table of ["confirmations", "messages", "record_notes"]) expect(schema).toContain(`${table}_append_only`);
+    expect(schema).toContain("UNIQUE (agreement_id, party_id, kind)");
+    expect(schema).toContain("char_length(body) BETWEEN 1 AND 4000");
+    expect(schema).toContain("char_length(body) BETWEEN 1 AND 500");
+    expect(schema).not.toMatch(/outcome|MUTUAL/);
+  });
+});
+
+describe("privacy v3 draft (S5 record entries)", () => {
+  const schema = migrations.find((migration) => migration.id === "0010")?.sql ?? "";
+  it("derives from approved v2 with replacements that all match, as a draft only", async () => {
+    const { PRIVACY_V3_REPLACEMENTS } = await import("./legal-v3.js");
+    for (const [from, to] of PRIVACY_V3_REPLACEMENTS) { expect(PRIVACY_V2).toContain(from); expect(to).not.toBe(from); }
+    expect(schema).toContain("version = 2 AND status = 'APPROVED'");
+    expect(schema).toContain("3, 'DRAFT'");
+    const v3 = PRIVACY_V3_REPLACEMENTS.reduce((body, [from, to]) => body.replace(from, to), PRIVACY_V2);
+    expect(v3).toContain("confirmations, messages and notes");
+    expect(v3).toContain("Theckards does not verify them");
+    expect(legalApprovalBlockers(v3)).toEqual([]);
+  });
+});

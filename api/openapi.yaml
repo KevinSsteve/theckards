@@ -281,6 +281,87 @@ paths:
         '200': { description: Guest session cookie set }
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/record:
+    get:
+      summary: Party-only record view (derived confirmation outcome, slots, timeline of versions, signatures, seals, confirmations, messages and notes)
+      operationId: getAgreementRecord
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+      responses:
+        '200': { description: Record view; outcome is derived on read and never stored }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/confirmations:
+    post:
+      summary: Declare one confirmation for the caller's own role (insert-only; never verified by Theckards)
+      operationId: declareConfirmation
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind: { type: string, enum: [ITEM_DELIVERED, ITEM_RECEIVED, SERVICE_DONE, SERVICE_ACCEPTED, PAYMENT_SENT, PAYMENT_RECEIVED, FULFILLED] }
+                note: { type: string, maxLength: 500 }
+      responses:
+        '201': { description: Declared; the agreement becomes COMPLETED when every expected confirmation exists }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/messages:
+    post:
+      summary: Send an insert-only message to the other party (max 4000 characters)
+      operationId: sendMessage
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [body], properties: { body: { type: string, minLength: 1, maxLength: 4000 } } }
+      responses:
+        '201': { description: Stored }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/notes:
+    post:
+      summary: Add an insert-only note to the record (max 500 characters, visible to both parties, never public)
+      operationId: addRecordNote
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [body], properties: { body: { type: string, minLength: 1, maxLength: 500 } } }
+      responses:
+        '201': { description: Stored }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/claim:
+    post:
+      summary: Link the counterparty party (proven by the bound-device guest session) to the signed-in account
+      operationId: claimCounterpartyParty
+      security: [{ userSession: [], guestSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Linked }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /api/agreements/{id}/documents/final:
     get:
       summary: Download the sealed final PDF

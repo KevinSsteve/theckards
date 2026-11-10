@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { getAgreement } from "../../../server/agreements";
 import { currentUserSession } from "../../../server/auth/current";
+import { userHasCurrentConsents } from "../../../server/legal";
 import { AgreementActions } from "./AgreementActions";
+import { RecordPanel } from "./RecordPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +11,8 @@ export default async function AgreementPage({ params }: { params: Promise<{ id: 
   const session = await currentUserSession();
   if (!session) redirect("/api/auth/login");
   const { id } = await params;
+  if (!/^[0-9a-f-]{36}$/.test(id)) redirect("/dashboard");
+  if (!(await userHasCurrentConsents(session.userId))) redirect(`/legal/consent?next=/agreements/${id}`);
   const agreement = await getAgreement(session.userId, id);
   return <>
     <header className="topbar"><a className="brand" href="/dashboard">Theckards</a><span>{agreement.state.replaceAll("_", " ")}</span></header>
@@ -20,7 +24,8 @@ export default async function AgreementPage({ params }: { params: Promise<{ id: 
       <AgreementActions id={agreement.id} lockVersion={agreement.lockVersion} state={agreement.state} renderStatus={agreement.renderStatus}
         creatorSignedName={agreement.creatorSignedName} creatorSignedAt={agreement.creatorSignedAt}
         counterpartyName={agreement.counterpartyName} counterpartySignedName={agreement.counterpartySignedName}
-        counterpartySignedAt={agreement.counterpartySignedAt} finalSealId={agreement.finalSealId} />
+        counterpartySignedAt={agreement.counterpartySignedAt} finalSealId={agreement.finalSealId} viewerIsCreator={agreement.viewerIsCreator} />
+      {["EXECUTED", "COMPLETED", "IN_CASE", "RESOLVED"].includes(agreement.state) && <RecordPanel id={agreement.id} />}
     </main>
   </>;
 }

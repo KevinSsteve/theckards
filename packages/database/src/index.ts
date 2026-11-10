@@ -74,7 +74,7 @@ export async function runMigrations(
     await client.query("REVOKE ALL ON schema_migrations FROM theckards_app");
     await client.query("REVOKE UPDATE, DELETE ON user_consents, app_settings_history, audit_logs FROM theckards_app");
     await client.query("REVOKE DELETE ON agreements, agreement_versions, parties, in_person_sessions FROM theckards_app");
-    await client.query("REVOKE UPDATE, DELETE ON signatures, party_consents, sealed_documents FROM theckards_app");
+    await client.query("REVOKE UPDATE, DELETE ON signatures, party_consents, sealed_documents, confirmations, messages, record_notes FROM theckards_app");
     return applied;
   } finally {
     await client.query("SELECT pg_advisory_unlock(hashtext('theckards-schema-migrations'))").catch(() => undefined);

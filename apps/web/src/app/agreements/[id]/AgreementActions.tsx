@@ -30,6 +30,7 @@ export interface AgreementActionsProps {
   counterpartySignedName: string | null;
   counterpartySignedAt: string | null;
   finalSealId: string | null;
+  viewerIsCreator: boolean;
 }
 
 export function AgreementActions(props: AgreementActionsProps) {
@@ -43,14 +44,15 @@ export function AgreementActions(props: AgreementActionsProps) {
     return () => window.clearTimeout(timer);
   }, [renderStatus, waitingForSeal]);
 
-  const open = ["DRAFT", "PENDING_SIGNATURES"].includes(state) && renderStatus === "READY";
+  const creator = props.viewerIsCreator;
+  const open = creator && ["DRAFT", "PENDING_SIGNATURES"].includes(state) && renderStatus === "READY";
   const canSign = open && !props.creatorSignedAt;
   const canShowQr = open && !!props.creatorSignedAt && !props.counterpartySignedAt;
   return <>
     <section className="card">
       <h2>Signatures</h2>
-      <p>You: {props.creatorSignedAt ? <>signed as <strong>{props.creatorSignedName}</strong> on {new Date(props.creatorSignedAt).toUTCString()}</> : "not signed yet"}</p>
-      <p>Other party: {props.counterpartySignedAt ? <>signed as <strong>{props.counterpartySignedName}</strong> on {new Date(props.counterpartySignedAt).toUTCString()}</> : "not signed yet"}</p>
+      <p>{creator ? "You" : "Creator"}: {props.creatorSignedAt ? <>signed as <strong>{props.creatorSignedName}</strong> on {new Date(props.creatorSignedAt).toUTCString()}</> : "not signed yet"}</p>
+      <p>{creator ? "Other party" : "You"}: {props.counterpartySignedAt ? <>signed as <strong>{props.counterpartySignedName}</strong> on {new Date(props.counterpartySignedAt).toUTCString()}</> : "not signed yet"}</p>
       {waitingForSeal && <p aria-live="polite">Both parties signed. The sealed record is being generated…</p>}
       {props.finalSealId && <p className="actions"><a className="button" href={`/api/agreements/${id}/documents/final`}>Download sealed PDF</a><a className="button secondary" href={`/api/agreements/${id}/documents/final/receipt`}>Download receipt</a><span className="muted">Seal ID {props.finalSealId}</span></p>}
     </section>
@@ -61,8 +63,8 @@ export function AgreementActions(props: AgreementActionsProps) {
       {renderStatus === "PENDING" && <p aria-live="polite">The PDF preview is being generated…</p>}
       {renderStatus === "FAILED" && <p className="error">Preview generation failed. Support has been notified.</p>}
       {renderStatus === "READY" && <a className="button secondary" href={`/api/agreements/${id}/preview`} target="_blank">Open PDF preview</a>}
-      {state === "REVISION_REQUESTED" && <p className="notice">Changes were requested. Edit the terms to create a new version, then sign again.</p>}
-      {["DRAFT", "PENDING_SIGNATURES", "REVISION_REQUESTED"].includes(state) && <p><button className="danger" disabled={busy} onClick={async () => {
+      {creator && state === "REVISION_REQUESTED" && <p className="notice">Changes were requested. Edit the terms to create a new version, then sign again.</p>}
+      {creator && ["DRAFT", "PENDING_SIGNATURES", "REVISION_REQUESTED"].includes(state) && <p><button className="danger" disabled={busy} onClick={async () => {
         if (!window.confirm("Cancel this agreement?")) return;
         setBusy(true); setMessage("");
         const result = await post(`/api/agreements/${id}/cancel`, undefined, { "if-match": `"${lockVersion}"` });

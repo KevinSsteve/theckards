@@ -44,6 +44,6 @@ export const GET = withRoute(
     jar.set(USER_COOKIE, session.token, { ...secureCookie, expires: session.absoluteExpiresAt });
     jar.set(CSRF_COOKIE, session.csrf, { ...csrfCookie, expires: session.absoluteExpiresAt });
     // Behind CloudFront/ALB, request.url carries the container host (0.0.0.0:3000); always redirect to the public origin.
-    return Response.redirect(new URL("/account", env().APP_BASE_URL), 302);
+    return Response.redirect(new URL(transaction.next ?? "/account", env().APP_BASE_URL), 302);
   },
 );

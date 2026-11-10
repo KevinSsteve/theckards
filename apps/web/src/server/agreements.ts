@@ -1,4 +1,4 @@
-import { canonicalJson, renderAgreement, templateDefinitions, templateFieldErrors, transition, validateTemplateFields, type AgreementState, type TemplateId } from "@theckards/domain";
+import { canonicalJson, missingRequiredFields, renderAgreement, templateDefinitions, templateFieldErrors, transition, validateTemplateFields, type AgreementState, type TemplateId } from "@theckards/domain";
 import type pg from "pg";
 import { decryptText, encryptText, hmac, randomToken, sha256 } from "./crypto";
 import { getPool, inTransaction } from "./db";
@@ -29,12 +29,14 @@ export interface AgreementRecord {
   counterpartySignedAt: string | null;
   finalSealId: string | null;
   finalSha256: string | null;
+  /** True when the requesting user created the agreement; the counterparty sees a read/record view. */
+  viewerIsCreator: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
 const AGREEMENT_SELECT = `
-  SELECT a.id, a.title, a.template_id, a.state, a.lock_version, a.current_version_number,
+  SELECT a.id, a.creator_id, a.title, a.template_id, a.state, a.lock_version, a.current_version_number,
          a.due_at, a.created_at, a.updated_at, v.render_status, v.document_sha256, v.fields,
          cp.invite_expires_at, cp.display_name AS counterparty_name,
          cs.typed_name AS creator_signed_name, cs.signed_at AS creator_signed_at,
@@ -51,6 +53,7 @@ const AGREEMENT_SELECT = `
 
 interface AgreementRow {
   id: string;
+  creator_id: string;
   title: string;
   template_id: TemplateId;
   state: AgreementState;
@@ -72,7 +75,7 @@ interface AgreementRow {
   updated_at: Date;
 }
 
-function mapAgreement(row: AgreementRow): AgreementRecord {
+function mapAgreement(row: AgreementRow, userId: string): AgreementRecord {
   return {
     id: row.id, title: row.title, templateId: row.template_id, state: row.state,
     lockVersion: row.lock_version, currentVersionNumber: row.current_version_number,
@@ -83,13 +86,14 @@ function mapAgreement(row: AgreementRow): AgreementRecord {
     counterpartyName: row.counterparty_name,
     creatorSignedName: row.creator_signed_name, creatorSignedAt: row.creator_signed_at?.toISOString() ?? null,
     counterpartySignedName: row.counterparty_signed_name, counterpartySignedAt: row.counterparty_signed_at?.toISOString() ?? null,
-    finalSealId: row.final_seal_id, finalSha256: row.final_sha256,
+    finalSealId: row.final_seal_id, finalSha256: row.final_sha256, viewerIsCreator: row.creator_id === userId,
     createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString(),
   };
 }
 
 function validFields(templateId: TemplateId, fields: unknown): Record<string, unknown> {
   const errors = templateFieldErrors(templateId, fields);
+  for (const key of missingRequiredFields(templateId, fields)) errors[key] ??= "This field is required";
   if (Object.keys(errors).length > 0) {
     const labels = new Map(templateDefinitions[templateId].fields.map((field) => [field.key, field.label]));
     const detail = Object.entries(errors).map(([key, message]) => `${labels.get(key) ?? key}: ${message}`).join(" · ");
@@ -123,7 +127,7 @@ export async function listAgreements(userId: string): Promise<AgreementRecord[]>
     )
     ORDER BY a.updated_at DESC
   `, [userId]);
-  return result.rows.map(mapAgreement);
+  return result.rows.map((row) => mapAgreement(row, userId));
 }
 
 export async function getAgreement(userId: string, agreementId: string): Promise<AgreementRecord> {
@@ -134,7 +138,7 @@ export async function getAgreement(userId: string, agreementId: string): Promise
   `, [agreementId, userId]);
   const row = result.rows[0];
   if (!row) throw new ProblemError(404, "Not Found", "Agreement not found.");
-  return mapAgreement(row);
+  return mapAgreement(row, userId);
 }
 
 async function enforceFreeQuota(client: pg.PoolClient, userId: string): Promise<void> {

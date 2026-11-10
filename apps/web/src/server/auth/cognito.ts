@@ -5,12 +5,16 @@ import { env } from "../env";
 import { randomToken, signPayload, verifySignedPayload } from "../crypto";
 
 export type AuthIntent = "user" | "admin";
+/** Post-login destinations are a fixed allowlist (no open redirects). */
+export const POST_LOGIN_PATHS = ["/account", "/claim"] as const;
+export type PostLoginPath = (typeof POST_LOGIN_PATHS)[number];
 
 export interface AuthTransaction {
   state: string;
   nonce: string;
   verifier: string;
   intent: AuthIntent;
+  next?: PostLoginPath;
   createdAt: number;
 }
 
@@ -36,12 +40,13 @@ function issuer(): string {
   return `https://cognito-idp.${env().AWS_REGION}.amazonaws.com/${env().USER_POOL_ID}`;
 }
 
-export function beginAuthorization(intent: AuthIntent, forceLogin = false): { url: string; transaction: string } {
+export function beginAuthorization(intent: AuthIntent, forceLogin = false, next?: PostLoginPath): { url: string; transaction: string } {
   const transaction: AuthTransaction = {
     state: randomToken(),
     nonce: randomToken(),
     verifier: randomToken(48),
     intent,
+    ...(next ? { next } : {}),
     createdAt: Date.now(),
   };
   const challenge = createHash("sha256").update(transaction.verifier).digest("base64url");
@@ -65,6 +70,7 @@ export function readAuthTransaction(value: string | undefined): AuthTransaction 
   const transaction = verifySignedPayload<AuthTransaction>(value);
   if (!transaction || Date.now() - transaction.createdAt > 10 * 60_000) return null;
   if (!(["user", "admin"] as const).includes(transaction.intent)) return null;
+  if (transaction.next !== undefined && !POST_LOGIN_PATHS.includes(transaction.next)) return null;
   return transaction;
 }
 

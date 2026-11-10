@@ -61,6 +61,11 @@ export function InPersonSigner({ token, initial, hasDownloadSession }: { token: 
       {view.sealed && downloadable && <>
         <p className="actions"><a className="button" href="/api/guest/documents/final">Download sealed PDF</a><a className="button secondary" href="/api/guest/documents/final/receipt">Download receipt</a></p>
         <p className="muted">Save it now: without an account you can download it only on this device, for about 2 hours. Anyone can later check that a copy is unchanged on the verification page.</p>
+        <div className="notice">
+          <strong>Keep access to this agreement</strong>
+          <p>Sign in or create a free Theckards account to see the record later, declare delivery or payment, and exchange messages with the other party.</p>
+          <a className="button" href="/api/auth/login?next=/claim">Keep access with an account</a>
+        </div>
       </>}
       {view.sealed && !downloadable && view.downloadReady && <button type="button" disabled={busy} onClick={claimDownload}>Get the sealed PDF</button>}
       {view.sealed && !downloadable && !view.downloadReady && <p className="muted">The download was already opened on this device. Ask the other party for a copy.</p>}

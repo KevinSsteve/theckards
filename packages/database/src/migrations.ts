@@ -1,6 +1,7 @@
 import { agreementStateCheckSql } from "@theckards/domain";
 import { ESIGN_V1, NOTICE_V1, PRIVACY_V1, TERMS_V1 } from "./legal-v1.js";
 import { ESIGN_V2, PRIVACY_V2, PRIVACY_V2_REPLACEMENTS, TERMS_V2, TERMS_V2_REPLACEMENTS } from "./legal-v2.js";
+import { PRIVACY_V3_REPLACEMENTS } from "./legal-v3.js";
 
 const lit = (value: string) => `$legal$${value}$legal$`;
 const replaced = (column: string, pairs: ReadonlyArray<readonly [string, string]>) =>
@@ -502,6 +503,68 @@ UPDATE legal_documents v2 SET title = 'Privacy Policy', body_md = ${lit(PRIVACY_
 WHERE v2.document_type = 'PRIVACY' AND v2.locale = 'en-US' AND v2.version = 2 AND v2.status = 'DRAFT'
   AND v2.body_md = (SELECT v1.body_md FROM legal_documents v1
     WHERE v1.document_type = 'PRIVACY' AND v1.locale = 'en-US' AND v1.version = 1 AND v1.status = 'APPROVED');
+`,
+  },
+  {
+    id: "0009",
+    name: "record_confirmations_messages_notes",
+    // S5 part 1. All three tables are insert-only for the application (trigger + REVOKE in index.ts).
+    // Outcomes (MUTUAL / ONE_SIDED / NONE / PENDING) are derived on read and never stored.
+    sql: `
+CREATE TABLE IF NOT EXISTS confirmations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agreement_id uuid NOT NULL REFERENCES agreements(id),
+  version_id uuid NOT NULL REFERENCES agreement_versions(id),
+  party_id uuid NOT NULL REFERENCES parties(id),
+  kind text NOT NULL CHECK (kind IN ('ITEM_DELIVERED', 'ITEM_RECEIVED', 'SERVICE_DONE', 'SERVICE_ACCEPTED', 'PAYMENT_SENT', 'PAYMENT_RECEIVED', 'FULFILLED')),
+  note text CHECK (note IS NULL OR char_length(note) <= 500),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (agreement_id, party_id, kind)
+);
+CREATE INDEX IF NOT EXISTS confirmations_agreement_idx ON confirmations(agreement_id, created_at);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agreement_id uuid NOT NULL REFERENCES agreements(id),
+  party_id uuid NOT NULL REFERENCES parties(id),
+  body text NOT NULL CHECK (char_length(body) BETWEEN 1 AND 4000),
+  client_key char(64) NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (party_id, client_key)
+);
+CREATE INDEX IF NOT EXISTS messages_agreement_idx ON messages(agreement_id, created_at);
+
+CREATE TABLE IF NOT EXISTS record_notes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agreement_id uuid NOT NULL REFERENCES agreements(id),
+  party_id uuid NOT NULL REFERENCES parties(id),
+  body text NOT NULL CHECK (char_length(body) BETWEEN 1 AND 500),
+  client_key char(64) NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (party_id, client_key)
+);
+CREATE INDEX IF NOT EXISTS record_notes_agreement_idx ON record_notes(agreement_id, created_at);
+
+DROP TRIGGER IF EXISTS confirmations_append_only ON confirmations;
+CREATE TRIGGER confirmations_append_only BEFORE UPDATE OR DELETE ON confirmations
+FOR EACH ROW EXECUTE FUNCTION prevent_append_only_change();
+DROP TRIGGER IF EXISTS messages_append_only ON messages;
+CREATE TRIGGER messages_append_only BEFORE UPDATE OR DELETE ON messages
+FOR EACH ROW EXECUTE FUNCTION prevent_append_only_change();
+DROP TRIGGER IF EXISTS record_notes_append_only ON record_notes;
+CREATE TRIGGER record_notes_append_only BEFORE UPDATE OR DELETE ON record_notes
+FOR EACH ROW EXECUTE FUNCTION prevent_append_only_change();
+`,
+  },
+  {
+    id: "0010",
+    name: "privacy_v3_record_entries_draft",
+    // Draft only. Recording confirmations, messages and notes stays blocked until the owner approves Privacy v3.
+    sql: `
+INSERT INTO legal_documents(document_type, locale, version, status, title, body_md)
+SELECT document_type, locale, 3, 'DRAFT', title, ${replaced("body_md", PRIVACY_V3_REPLACEMENTS)}
+FROM legal_documents WHERE document_type = 'PRIVACY' AND locale = 'en-US' AND version = 2 AND status = 'APPROVED'
+ON CONFLICT (document_type, locale, version) DO NOTHING;
 `,
   },
 ] as const;

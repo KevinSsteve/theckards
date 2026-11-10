@@ -110,6 +110,24 @@ describe("in-person route contract", () => {
   });
 });
 
+describe("account link route contract", () => {
+  it("requires a user session, rate limit and idempotency, and takes the party only from the guest session", async () => {
+    const source = await readFile(path.resolve(process.cwd(), "src/app/api/claim/route.ts"), "utf8");
+    expect(source).toMatch(/auth:\s*"user"/);
+    expect(source).toContain("rateLimit:");
+    expect(source).toContain("idempotent:");
+    expect(source).toContain("loadGuestSession(");
+    expect(source).not.toMatch(/body|params\./);
+  });
+
+  it("only redirects after login and consent to fixed internal paths", async () => {
+    const cognito = await readFile(path.resolve(process.cwd(), "src/server/auth/cognito.ts"), "utf8");
+    expect(cognito).toContain('POST_LOGIN_PATHS = ["/account", "/claim"]');
+    const consent = await readFile(path.resolve(process.cwd(), "src/app/legal/consent/page.tsx"), "utf8");
+    expect(consent).toContain(String.raw`agreements\/[0-9a-f-]{36})$/`);
+  });
+});
+
 describe("public verification route contract", () => {
   it("is public, rate-limited, briefly cached and receives only a hash", async () => {
     const route = await readFile(path.resolve(process.cwd(), "src/app/api/public/verify/[sha256]/route.ts"), "utf8");

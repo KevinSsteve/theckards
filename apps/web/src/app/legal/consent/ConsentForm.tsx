@@ -7,7 +7,7 @@ function csrf(): string {
   return part ? decodeURIComponent(part.split("=")[1] ?? "") : "";
 }
 
-export function ConsentForm() {
+export function ConsentForm({ next }: { next: string }) {
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -19,7 +19,7 @@ export function ConsentForm() {
       setBusy(true); setError("");
       const response = await fetch("/api/legal/consent", { method: "POST", headers: { "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() } });
       if (!response.ok) { const body = await response.json() as { detail?: string }; setError(body.detail ?? "Could not record consent."); setBusy(false); return; }
-      window.location.assign("/account");
+      window.location.assign(next);
     }}>{busy ? "Recording…" : "Accept and continue"}</button>
   </div>;
 }
