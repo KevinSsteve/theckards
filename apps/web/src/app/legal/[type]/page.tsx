@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { currentApprovedLegal } from "../../../server/legal";
+import { LegalText } from "../../components/LegalText";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export default async function LegalDocumentPage({ params }: { params: Promise<{ 
   return <main className="shell narrow">
     <a className="brand" href="/">Theckards</a>
     {document
-      ? <><h1>{document.title}</h1><p className="muted">Version {document.version}</p><pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{document.bodyMd}</pre></>
+      ? <><p className="muted">Version {document.version}{document.approvedAt ? ` · effective ${document.approvedAt.toISOString().slice(0, 10)}` : ""}</p><LegalText markdown={document.bodyMd} /></>
       : <><h1>Pending approval</h1><p>This document has not been published yet. Registration and signing stay closed until it is approved.</p></>}
   </main>;
 }

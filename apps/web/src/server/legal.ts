@@ -1,4 +1,5 @@
-import { REQUIRED_LEGAL_DOCUMENTS, type LegalDocumentType } from "@theckards/domain";
+import { REQUIRED_LEGAL_DOCUMENTS, legalApprovalBlockers, type LegalDocumentType } from "@theckards/domain";
+import { ProblemError } from "./http/problem";
 import type pg from "pg";
 import { encryptText } from "./crypto";
 import { getPool, inTransaction } from "./db";
@@ -75,7 +76,7 @@ export async function updateLegalDraft(input: { id: string; title: string; bodyM
   await inTransaction(async (client: pg.PoolClient) => {
     const current = await client.query("SELECT * FROM legal_documents WHERE id = $1 FOR UPDATE", [input.id]);
     const document = current.rows[0] as Record<string, unknown> | undefined;
-    if (!document || document.status !== "DRAFT") throw new Error("Only draft legal documents can be edited");
+    if (!document || document.status !== "DRAFT") throw new ProblemError(409, "Not a draft", "Only draft legal documents can be edited.");
     await client.query("UPDATE legal_documents SET title = $2, body_md = $3 WHERE id = $1", [input.id, input.title, input.bodyMd]);
     await writeAudit(client, { actorType: "ADMIN", actorId: input.actorId, action: "LEGAL_DRAFT_UPDATED", entityType: "legal_document", entityId: input.id, requestId: input.requestId, before: { title: document.title, bodyMd: document.body_md }, after: { title: input.title, bodyMd: input.bodyMd } });
   });
@@ -85,7 +86,11 @@ export async function approveLegalDocument(input: { id: string; actorId: string;
   await inTransaction(async (client: pg.PoolClient) => {
     const current = await client.query("SELECT * FROM legal_documents WHERE id = $1 FOR UPDATE", [input.id]);
     const document = current.rows[0] as Record<string, unknown> | undefined;
-    if (!document || document.status !== "DRAFT") throw new Error("Only draft legal documents can be approved");
+    if (!document || document.status !== "DRAFT") throw new ProblemError(409, "Not a draft", "Only draft legal documents can be approved.");
+    const blockers = legalApprovalBlockers(String(document.body_md));
+    if (blockers.length > 0) {
+      throw new ProblemError(409, "Incomplete document", `Complete these fields before approving: ${blockers.join("; ")}`);
+    }
     await client.query("UPDATE legal_documents SET status = 'RETIRED' WHERE document_type = $1 AND locale = $2 AND status = 'APPROVED'", [document.document_type, document.locale]);
     await client.query("UPDATE legal_documents SET status = 'APPROVED', approved_by = $2, approved_at = now() WHERE id = $1", [input.id, input.actorId]);
     await writeAudit(client, { actorType: "ADMIN", actorId: input.actorId, action: "LEGAL_APPROVED", entityType: "legal_document", entityId: input.id, requestId: input.requestId, after: { documentType: document.document_type, locale: document.locale, version: document.version } });

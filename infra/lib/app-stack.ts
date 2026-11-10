@@ -27,6 +27,9 @@ import * as appconfig from "aws-cdk-lib/aws-appconfig";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import * as appscaling from "aws-cdk-lib/aws-applicationautoscaling";
 import * as cr from "aws-cdk-lib/custom-resources";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as path from "node:path";
+import { createHash } from "node:crypto";
 import { NagSuppressions } from "cdk-nag";
 import type { BaseStack } from "./base-stack";
 
@@ -205,12 +208,41 @@ export class AppStack extends cdk.Stack {
       encryption: s3.BucketEncryption.S3_MANAGED, blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL, enforceSSL: true,
       lifecycleRules: [{ expiration: cdk.Duration.days(30) }], removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
+    // Forwarding of selected addresses (cdk.json context "mailForwards": { localPart: externalAddress }).
+    const forwardMap: Record<string, string> = {};
+    for (const [local, target] of Object.entries((this.node.tryGetContext("mailForwards") ?? {}) as Record<string, string>)) {
+      forwardMap[`${local}@${domain}`.toLowerCase()] = target;
+    }
+    const forwarder = new lambda.Function(this, "MailForwarder", {
+      functionName: `${p}-mail-forwarder`,
+      runtime: lambda.Runtime.NODEJS_22_X, architecture: lambda.Architecture.ARM_64,
+      handler: "index.handler", code: lambda.Code.fromAsset(path.join(__dirname, "../lambda/mail-forwarder")),
+      memorySize: 256, timeout: cdk.Duration.seconds(30), reservedConcurrentExecutions: 5,
+      environment: {
+        FORWARDS: JSON.stringify(forwardMap), BUCKET: inboundMail.bucketName, PREFIX: "inbox/",
+        FROM_ADDRESS: `forwarder@${domain}`, CONFIG_SET: configSet.configurationSetName,
+      },
+      logGroup: new logs.LogGroup(this, "MailForwarderLogs", { logGroupName: `/theckards/${envName}/mail-forwarder`, retention: logs.RetentionDays.THREE_MONTHS, removalPolicy: cdk.RemovalPolicy.RETAIN }),
+    });
+    inboundMail.grantRead(forwarder, "inbox/*");
+    forwarder.addToRolePolicy(new iam.PolicyStatement({
+      actions: ["ses:SendEmail", "ses:SendRawEmail"], resources: ["*"],
+      conditions: { StringEquals: { "ses:FromAddress": [`forwarder@${domain}`] } },
+    }));
+    // While SES is in the sandbox, external forward targets must be verified identities (AWS emails a confirmation link).
+    for (const target of new Set(Object.values(forwardMap))) {
+      new ses.EmailIdentity(this, `ForwardTarget${createHash("sha256").update(target).digest("hex").slice(0, 8)}`, { identity: ses.Identity.email(target) });
+    }
+
     const inboundRuleSetName = `${p}-inbound`;
     const inboundRules = new ses.ReceiptRuleSet(this, "InboundRules", {
       receiptRuleSetName: inboundRuleSetName,
       rules: [{
         recipients: [domain], scanEnabled: true, tlsPolicy: ses.TlsPolicy.REQUIRE,
-        actions: [new sesActions.S3({ bucket: inboundMail, objectKeyPrefix: "inbox/" })],
+        actions: [
+          new sesActions.S3({ bucket: inboundMail, objectKeyPrefix: "inbox/" }),
+          new sesActions.Lambda({ function: forwarder, invocationType: sesActions.LambdaInvocationType.EVENT }),
+        ],
       }],
     });
     const activateRules = new cr.AwsCustomResource(this, "ActivateInboundRules", {

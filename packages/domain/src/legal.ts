@@ -14,3 +14,10 @@ export const LegalDraftSchema = z.object({
 });
 
 export const REQUIRED_LEGAL_DOCUMENTS = ["TERMS", "PRIVACY", "ESIGN", "NOTICE"] as const;
+
+/** Unresolved owner inputs and seed placeholders that must never reach an APPROVED document. */
+export function legalApprovalBlockers(bodyMd: string): string[] {
+  const blockers = [...bodyMd.matchAll(/\[TO COMPLETE:[^\]]*\]/g)].map((match) => match[0]);
+  if (/approval required before/i.test(bodyMd)) blockers.push("placeholder text");
+  return blockers;
+}

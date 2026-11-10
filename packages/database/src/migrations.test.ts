@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AGREEMENT_STATES } from "@theckards/domain";
+import { AGREEMENT_STATES, legalApprovalBlockers } from "@theckards/domain";
 import { migrations } from "./migrations.js";
 
 describe("database migrations", () => {
@@ -54,5 +54,20 @@ describe("QR invitation migration", () => {
     expect(schema).toContain("invite_channel IN ('EMAIL', 'LINK')");
     expect(schema).toContain("invite_token_ciphertext bytea");
     expect(schema).not.toMatch(/invite_token text/);
+  });
+});
+
+describe("legal drafts v1", () => {
+  const schema = migrations.find((migration) => migration.id === "0006")?.sql ?? "";
+  it("only replaces untouched DRAFT placeholders and never approves", () => {
+    expect(schema.match(/status = 'DRAFT' AND char_length\(body_md\) < 200/g)).toHaveLength(4);
+    expect(schema).not.toMatch(/status\s*=\s*'APPROVED'/);
+    expect(schema).not.toContain("$legal$$legal$");
+  });
+  it("includes the federal ESIGN consumer disclosures", () => {
+    for (const phrase of ["Paper copies", "Withdrawing consent", "Hardware and software requirements", "contact information current"]) expect(schema).toContain(phrase);
+  });
+  it("keeps owner-only fields marked so approval stays blocked until completed", () => {
+    expect(legalApprovalBlockers(schema).length).toBeGreaterThanOrEqual(3);
   });
 });

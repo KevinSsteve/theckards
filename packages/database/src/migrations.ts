@@ -1,4 +1,5 @@
 import { agreementStateCheckSql } from "@theckards/domain";
+import { ESIGN_V1, NOTICE_V1, PRIVACY_V1, TERMS_V1 } from "./legal-v1.js";
 
 export interface Migration {
   readonly id: string;
@@ -414,6 +415,17 @@ ALTER TABLE parties ADD COLUMN IF NOT EXISTS invite_channel text NOT NULL DEFAUL
 ALTER TABLE parties ADD COLUMN IF NOT EXISTS invite_token_ciphertext bytea;
 ALTER TABLE parties DROP CONSTRAINT IF EXISTS parties_invite_channel_check;
 ALTER TABLE parties ADD CONSTRAINT parties_invite_channel_check CHECK (invite_channel IN ('EMAIL', 'LINK'));
+`,
+  },
+  {
+    id: "0006",
+    name: "legal_drafts_v1_content",
+    // Replaces only the untouched seed placeholders (short DRAFT v1 bodies); never overwrites owner edits or approvals.
+    sql: `
+UPDATE legal_documents SET body_md = $legal$${TERMS_V1}$legal$ WHERE document_type = 'TERMS' AND version = 1 AND status = 'DRAFT' AND char_length(body_md) < 200;
+UPDATE legal_documents SET body_md = $legal$${PRIVACY_V1}$legal$ WHERE document_type = 'PRIVACY' AND version = 1 AND status = 'DRAFT' AND char_length(body_md) < 200;
+UPDATE legal_documents SET body_md = $legal$${ESIGN_V1}$legal$, title = 'Electronic Records and Signature Consent' WHERE document_type = 'ESIGN' AND version = 1 AND status = 'DRAFT' AND char_length(body_md) < 200;
+UPDATE legal_documents SET body_md = $legal$${NOTICE_V1}$legal$ WHERE document_type = 'NOTICE' AND version = 1 AND status = 'DRAFT' AND char_length(body_md) < 200;
 `,
   },
 ] as const;

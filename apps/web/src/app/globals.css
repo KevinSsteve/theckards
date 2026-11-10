@@ -35,5 +35,8 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; min
 .admin-nav { display: flex; flex-direction: column; gap: .35rem; }
 .admin-nav a { border-radius: .4rem; color: var(--ink); padding: .55rem .7rem; text-decoration: none; }
 .admin-nav a:hover { background: var(--paper); }
+.legal-text h1 { font-size: 1.8rem; letter-spacing: -.02em; }
+.legal-text h2 { font-size: 1.15rem; margin-top: 1.6rem; }
+.legal-text p, .legal-text li { line-height: 1.6; }
 pre.audit { max-height: 420px; overflow: auto; white-space: pre-wrap; }
 @media (max-width: 720px) { .admin-shell { grid-template-columns: 1fr; } .admin-nav { flex-direction: row; flex-wrap: wrap; } }

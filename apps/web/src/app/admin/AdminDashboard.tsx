@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { legalApprovalBlockers } from "@theckards/domain";
 
 interface Setting {
   key: string;
@@ -59,6 +60,7 @@ function LegalCard({ initial, editable }: { initial: LegalDocument; editable: bo
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const isDraft = document.status === "DRAFT";
+  const blockers = isDraft ? legalApprovalBlockers(bodyMd) : [];
   async function save() {
     setBusy(true); setMessage("");
     const response = await fetch(`/api/admin/legal/${document.id}`, { method: "PATCH", headers: { "content-type": "application/json", "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ title, bodyMd }) });
@@ -79,8 +81,9 @@ function LegalCard({ initial, editable }: { initial: LegalDocument; editable: bo
     <label>Title<input value={title} disabled={!editable || !isDraft || busy} onChange={(event) => setTitle(event.target.value)} /></label>
     <label>Markdown<textarea value={bodyMd} disabled={!editable || !isDraft || busy} onChange={(event) => setBodyMd(event.target.value)} /></label>
     {message && <p role="status" className={message.includes("failed") ? "error" : "success"}>{message}</p>}
+    {blockers.length > 0 && <div className="notice"><strong>Complete before approving:</strong><ul>{blockers.map((b) => <li key={b}>{b}</li>)}</ul><span className="muted">Edit the text above, save the draft, then approve.</span></div>}
     {isDraft
-      ? <div className="actions"><button className="secondary" disabled={!editable || busy} onClick={save}>Save draft</button><button disabled={!editable || busy} onClick={approve}>Approve</button></div>
+      ? <div className="actions"><button className="secondary" disabled={!editable || busy} onClick={save}>Save draft</button><button disabled={!editable || busy || blockers.length > 0} onClick={approve}>Approve</button></div>
       : <button className="secondary" disabled={!editable || busy} onClick={async () => {
           setBusy(true); setMessage("");
           const response = await fetch("/api/admin/legal", { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ documentType: document.documentType, locale: document.locale, title, bodyMd }) });
