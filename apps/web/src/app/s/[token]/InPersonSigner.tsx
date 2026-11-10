@@ -33,7 +33,7 @@ export function InPersonSigner({ token, initial, hasDownloadSession }: { token: 
   async function requestCode(name: string) {
     setBusy(true); setMessage("");
     const response = await fetch(`${base}/request`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ typedName: name, consent: true }),
+      method: "POST", headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ typedName: name, consent: true }),
     });
     const data = await response.json().catch(() => ({})) as { code?: string; expiresAt?: string; detail?: string };
     setBusy(false);
@@ -44,7 +44,7 @@ export function InPersonSigner({ token, initial, hasDownloadSession }: { token: 
 
   async function claimDownload() {
     setBusy(true); setMessage("");
-    const response = await fetch(`${base}/download-session`, { method: "POST" });
+    const response = await fetch(`${base}/download-session`, { method: "POST", headers: { "idempotency-key": crypto.randomUUID() } });
     const data = await response.json().catch(() => ({})) as { detail?: string };
     setBusy(false);
     if (!response.ok) { setMessage(data.detail ?? "The download is not available."); return; }

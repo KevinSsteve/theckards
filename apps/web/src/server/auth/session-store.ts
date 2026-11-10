@@ -143,15 +143,25 @@ export interface GuestSession {
 const GUEST_SESSION_HOURS = 2;
 const GUEST_IDLE_MINUTES = 30;
 
-export async function createGuestSession(client: pg.PoolClient, agreementId: string, partyId: string): Promise<{ token: string; csrf: string; absoluteExpiresAt: Date }> {
-  const token = randomToken();
-  const csrf = randomToken();
+export async function createGuestSession(
+  client: pg.PoolClient, agreementId: string, partyId: string,
+  credentials?: { token: string; csrf: string },
+): Promise<{ token: string; csrf: string; absoluteExpiresAt: Date }> {
+  const token = credentials?.token ?? randomToken();
+  const csrf = credentials?.csrf ?? randomToken();
   const absoluteExpiresAt = new Date(Date.now() + GUEST_SESSION_HOURS * 3_600_000);
+  const sessionHash = hmac(token, "auth");
   await client.query(`
     INSERT INTO sessions(session_hash, user_id, kind, groups, csrf_hash, inactivity_expires_at, absolute_expires_at, recent_auth_at, guest_agreement_id, guest_party_id)
     VALUES ($1, NULL, 'GUEST', '{}', $2, now() + ($3::text || ' minutes')::interval, $4, now(), $5, $6)
-  `, [hmac(token, "auth"), hmac(csrf, "auth"), GUEST_IDLE_MINUTES, absoluteExpiresAt, agreementId, partyId]);
-  return { token, csrf, absoluteExpiresAt };
+    ON CONFLICT (session_hash) DO NOTHING
+  `, [sessionHash, hmac(csrf, "auth"), GUEST_IDLE_MINUTES, absoluteExpiresAt, agreementId, partyId]);
+  const stored = await client.query<{ absolute_expires_at: Date }>(
+    "SELECT absolute_expires_at FROM sessions WHERE session_hash = $1 AND kind = 'GUEST' AND guest_agreement_id = $2 AND guest_party_id = $3",
+    [sessionHash, agreementId, partyId],
+  );
+  if (!stored.rows[0]) throw new Error("Guest session could not be created");
+  return { token, csrf, absoluteExpiresAt: stored.rows[0].absolute_expires_at };
 }
 
 export async function loadGuestSession(token: string | undefined): Promise<GuestSession | null> {

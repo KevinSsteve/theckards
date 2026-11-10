@@ -49,7 +49,7 @@ describe("agreement route authorization contract", () => {
   });
 
   it("requires If-Match on resource mutations", async () => {
-    for (const relative of ["[id]/route.ts", "[id]/invite/route.ts", "[id]/cancel/route.ts", "[id]/milestones/route.ts"]) {
+    for (const relative of ["[id]/route.ts", "[id]/invite/route.ts", "[id]/cancel/route.ts", "[id]/milestones/route.ts", "[id]/in-person/route.ts"]) {
       const source = await readFile(path.resolve(process.cwd(), "src/app/api/agreements", relative), "utf8");
       expect(source, relative).toContain("readIfMatch(request)");
     }
@@ -77,7 +77,22 @@ describe("in-person route contract", () => {
       const source = await readFile(file, "utf8");
       expect(source, file).toMatch(/auth:\s*"public"/);
       expect(source, file).toContain("rateLimit:");
-      expect(source, file).not.toContain("idempotent:");
+      if (source.includes("export const POST")) {
+        expect(source.includes("idempotent:") || source.includes('headers.get("idempotency-key")'), file).toBe(true);
+      }
+    }
+  });
+
+  it("does not put secret-bearing QR/code responses in the generic idempotency store", async () => {
+    for (const relative of ["[id]/in-person/route.ts"]) {
+      const source = await readFile(path.resolve(process.cwd(), "src/app/api/agreements", relative), "utf8");
+      expect(source, relative).toContain('headers.get("idempotency-key")');
+      expect(source, relative).not.toContain("idempotent:");
+    }
+    for (const relative of ["[token]/request/route.ts", "[token]/download-session/route.ts"]) {
+      const source = await readFile(path.resolve(process.cwd(), "src/app/api/in-person", relative), "utf8");
+      expect(source, relative).toContain('headers.get("idempotency-key")');
+      expect(source, relative).not.toContain("idempotent:");
     }
   });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AGREEMENT_STATES, legalApprovalBlockers } from "@theckards/domain";
 import { PRIVACY_V1, TERMS_V1 } from "./legal-v1.js";
-import { ESIGN_V2, PRIVACY_V2_REPLACEMENTS, TERMS_V2_REPLACEMENTS } from "./legal-v2.js";
+import { ESIGN_V2, PRIVACY_V2, PRIVACY_V2_REPLACEMENTS, TERMS_V2, TERMS_V2_REPLACEMENTS } from "./legal-v2.js";
 import { migrations } from "./migrations.js";
 
 describe("database migrations", () => {
@@ -94,5 +94,26 @@ describe("in-person QR signing migration", () => {
     expect(schema).not.toMatch(/\b(token|code) text\b/);
     expect(schema).toContain("'IN_PERSON_QR'");
     expect(schema).toContain('{"EMAIL_DELIVERY_ENABLED": false}');
+  });
+});
+
+describe("corrective legal v2 migration", () => {
+  const schema = migrations.find((migration) => migration.id === "0008")?.sql ?? "";
+  it("replaces only v2 drafts that are still identical to approved v1", () => {
+    expect(schema).toContain("code_expires_at timestamptz");
+    expect(schema).toContain("download_claim_hash char(64)");
+    expect(schema).toContain("v2.status = 'DRAFT'");
+    expect(schema.match(/v2\.body_md = \(SELECT v1\.body_md/g)).toHaveLength(2);
+    expect(schema.match(/v1\.status = 'APPROVED'/g)).toHaveLength(2);
+  });
+  it("provides complete unblocked en-US terms and privacy drafts for in-person signing", () => {
+    expect(legalApprovalBlockers(TERMS_V2)).toEqual([]);
+    expect(legalApprovalBlockers(PRIVACY_V2)).toEqual([]);
+    for (const heading of ["## 1.", "## 5.", "## 10."]) expect(TERMS_V2).toContain(heading);
+    for (const phrase of ["in-person QR", "15 minutes", "10 minutes", "SQUARE CIRCLE X SERVICES LDA."]) {
+      expect(`${TERMS_V2}\n${PRIVACY_V2}`).toContain(phrase);
+    }
+    expect(TERMS_V2).not.toMatch(/one-time code sent to your email/i);
+    expect(PRIVACY_V2).not.toMatch(/send verification codes, invitations and receipts/i);
   });
 });

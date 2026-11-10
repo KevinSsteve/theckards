@@ -55,7 +55,7 @@ export function AgreementActions(props: AgreementActionsProps) {
       {props.finalSealId && <p><a className="button" href={`/api/agreements/${id}/documents/final`}>Download sealed PDF</a> <span className="muted">Seal ID {props.finalSealId}</span></p>}
     </section>
     {canSign && <CreatorSignForm id={id} lockVersion={lockVersion} />}
-    {canShowQr && <InPersonPanel id={id} />}
+    {canShowQr && <InPersonPanel id={id} lockVersion={lockVersion} />}
     <section className="card">
       <h2>Actions</h2>
       {renderStatus === "PENDING" && <p aria-live="polite">The PDF preview is being generated…</p>}
@@ -99,7 +99,7 @@ function CreatorSignForm({ id, lockVersion }: { id: string; lockVersion: number 
 
 interface CreatorView { status: string; expiresAt: string | null; counterpartyTypedName: string | null; attemptsLeft: number; agreementState: string }
 
-function InPersonPanel({ id }: { id: string }) {
+function InPersonPanel({ id, lockVersion }: { id: string; lockVersion: number }) {
   const [qr, setQr] = useState<{ svg: string; expiresAt: string } | null>(null);
   const [view, setView] = useState<CreatorView | null>(null);
   const [code, setCode] = useState("");
@@ -123,7 +123,7 @@ function InPersonPanel({ id }: { id: string }) {
 
   async function start() {
     setBusy(true); setMessage(""); setCode("");
-    const result = await post(`/api/agreements/${id}/in-person`);
+    const result = await post(`/api/agreements/${id}/in-person`, undefined, { "if-match": `"${lockVersion}"` });
     setBusy(false);
     if (!result.ok || typeof result.data.svg !== "string") { setMessage(detail(result.data, "Could not create the QR code.")); return; }
     setQr({ svg: result.data.svg, expiresAt: String(result.data.expiresAt) });

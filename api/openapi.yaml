@@ -174,11 +174,13 @@ paths:
   /api/agreements/{id}/in-person:
     post:
       summary: Creator opens a single-use QR signing session (15 minutes); cancels any previous one
-      description: Not stored by the idempotency layer because the response carries the QR secret; a retry simply opens a new session.
+      description: The QR secret is derived from the Idempotency-Key and only its HMAC is stored; an exact retry returns the same session without storing the secret in the generic idempotency response table.
       operationId: startInPersonSigning
       security: [{ userSession: [] }]
       parameters:
         - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '201':
           description: QR session opened
@@ -232,6 +234,7 @@ paths:
       security: []
       parameters:
         - $ref: '#/components/parameters/QrToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -273,6 +276,7 @@ paths:
       security: []
       parameters:
         - $ref: '#/components/parameters/QrToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200': { description: Guest session cookie set }
         '404': { $ref: '#/components/responses/Problem' }

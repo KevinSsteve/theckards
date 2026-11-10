@@ -1,4 +1,4 @@
-import { REQUIRED_LEGAL_DOCUMENTS, legalApprovalBlockers, type LegalDocumentType } from "@theckards/domain";
+import { REQUIRED_LEGAL_DOCUMENTS, legalDocumentApprovalBlockers, type LegalDocumentType } from "@theckards/domain";
 import { ProblemError } from "./http/problem";
 import type pg from "pg";
 import { encryptText } from "./crypto";
@@ -87,7 +87,7 @@ export async function approveLegalDocument(input: { id: string; actorId: string;
     const current = await client.query("SELECT * FROM legal_documents WHERE id = $1 FOR UPDATE", [input.id]);
     const document = current.rows[0] as Record<string, unknown> | undefined;
     if (!document || document.status !== "DRAFT") throw new ProblemError(409, "Not a draft", "Only draft legal documents can be approved.");
-    const blockers = legalApprovalBlockers(String(document.body_md));
+    const blockers = legalDocumentApprovalBlockers(document.document_type as LegalDocumentType, String(document.body_md));
     if (blockers.length > 0) {
       throw new ProblemError(409, "Incomplete document", `Complete these fields before approving: ${blockers.join("; ")}`);
     }

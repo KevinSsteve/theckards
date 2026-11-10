@@ -1,6 +1,6 @@
 import { agreementStateCheckSql } from "@theckards/domain";
 import { ESIGN_V1, NOTICE_V1, PRIVACY_V1, TERMS_V1 } from "./legal-v1.js";
-import { ESIGN_V2, PRIVACY_V2_REPLACEMENTS, TERMS_V2_REPLACEMENTS } from "./legal-v2.js";
+import { ESIGN_V2, PRIVACY_V2, PRIVACY_V2_REPLACEMENTS, TERMS_V2, TERMS_V2_REPLACEMENTS } from "./legal-v2.js";
 
 const lit = (value: string) => `$legal$${value}$legal$`;
 const replaced = (column: string, pairs: ReadonlyArray<readonly [string, string]>) =>
@@ -482,6 +482,26 @@ ${draftV2FromApprovedV1("PRIVACY", PRIVACY_V2_REPLACEMENTS)}
 INSERT INTO legal_documents(document_type, locale, version, status, title, body_md)
 VALUES ('ESIGN', 'en-US', 2, 'DRAFT', 'Electronic Records and Signature Consent', ${lit(ESIGN_V2)})
 ON CONFLICT (document_type, locale, version) DO NOTHING;
+`,
+  },
+  {
+    id: "0008",
+    name: "repair_in_person_legal_v2_drafts",
+    // Migration 0007 used exact English replacements. The owner-approved v1 copy had been edited/translated,
+    // so its v2 copy could remain identical. Replace only an unchanged DRAFT copy; never overwrite owner edits.
+    sql: `
+ALTER TABLE in_person_sessions ADD COLUMN IF NOT EXISTS code_expires_at timestamptz;
+ALTER TABLE in_person_sessions ADD COLUMN IF NOT EXISTS download_claim_hash char(64);
+
+UPDATE legal_documents v2 SET title = 'Terms of Service', body_md = ${lit(TERMS_V2)}
+WHERE v2.document_type = 'TERMS' AND v2.locale = 'en-US' AND v2.version = 2 AND v2.status = 'DRAFT'
+  AND v2.body_md = (SELECT v1.body_md FROM legal_documents v1
+    WHERE v1.document_type = 'TERMS' AND v1.locale = 'en-US' AND v1.version = 1 AND v1.status = 'APPROVED');
+
+UPDATE legal_documents v2 SET title = 'Privacy Policy', body_md = ${lit(PRIVACY_V2)}
+WHERE v2.document_type = 'PRIVACY' AND v2.locale = 'en-US' AND v2.version = 2 AND v2.status = 'DRAFT'
+  AND v2.body_md = (SELECT v1.body_md FROM legal_documents v1
+    WHERE v1.document_type = 'PRIVACY' AND v1.locale = 'en-US' AND v1.version = 1 AND v1.status = 'APPROVED');
 `,
   },
 ] as const;

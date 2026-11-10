@@ -13,7 +13,7 @@ Amazon SES denied production access (case 179429657400653), so email invitations
 - The creator types the code on their own screen (max 5 attempts, then the session is cancelled). Then the counterparty signature is recorded with `verification_method = IN_PERSON_QR` and `confirmed_by_party_id = creator`, the agreement executes and is sealed.
 - The bound device can claim, once and within 2 h of completion, a 2-hour guest session to download the sealed PDF. The creator downloads from their account.
 - Requires approved v2 of TERMS, PRIVACY and ESIGN (`IN_PERSON_MIN_LEGAL_VERSION = 2`); migration 0007 creates them as DRAFT derived from approved v1. The owner approves them in Admin → Legal.
-- The start endpoint is not stored by the idempotency layer, because its response carries the QR secret. Retrying it simply opens a new session and cancels the old one.
+- The start and counterparty-sign endpoints use a high-entropy `Idempotency-Key` to derive their short-lived secret deterministically. Exact retries return the same QR/code without putting either secret in the generic idempotency response table; only keyed hashes are stored.
 
 ## Estimated fixed monthly cost
 US$0 (no new AWS service).

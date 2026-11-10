@@ -15,7 +15,7 @@ type Context = NonNullable<Parameters<typeof counterpartyView>[0]>;
 
 const device = "device-secret-of-the-signer";
 const base: Context = {
-  sessionId: "s1", agreementId: "a1", status: "OPEN", expiresAt: new Date(Date.now() + 60_000), deviceHash: null,
+  sessionId: "s1", agreementId: "a1", status: "OPEN", expiresAt: new Date(Date.now() + 60_000), codeExpiresAt: null, deviceHash: null,
   typedName: null, completedAt: null, guestSessionIssuedAt: null, partyId: null, isCurrentVersion: true,
   agreementState: "PENDING_SIGNATURES", title: "T", versionNumber: 1, documentS3Key: "k", sections: [], creatorSignedName: "A",
 };
