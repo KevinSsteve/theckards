@@ -1,4 +1,5 @@
 import pg from "pg";
+import awsSslProfiles from "aws-ssl-profiles";
 import { migrations } from "./migrations.js";
 
 export interface DatabaseConnection {
@@ -20,7 +21,7 @@ export async function runMigrations(
 ): Promise<readonly string[]> {
   const client = new pg.Client({
     ...connection,
-    ssl: connection.ssl === false ? false : { rejectUnauthorized: true },
+    ssl: connection.ssl === false ? false : awsSslProfiles,
     connectionTimeoutMillis: 10_000,
     statement_timeout: 120_000,
   });
@@ -77,5 +78,7 @@ export async function runMigrations(
     await client.end();
   }
 }
+
+export const rdsSsl = awsSslProfiles;
 
 export { migrations } from "./migrations.js";

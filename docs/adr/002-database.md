@@ -16,3 +16,8 @@ Single-AZ: queda de AZ = indisponibilidade até restauro (RTO 4 h). Multi-AZ exi
 
 ## Risco operacional
 
+
+## TLS trust update (2026-11-10)
+Clients validate the RDS server certificate with the AWS RDS CA bundle shipped by `aws-ssl-profiles`; `rejectUnauthorized: false` is forbidden. See [AWS RDS SSL/TLS guidance](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html).
+
+Content was rephrased for compliance with licensing restrictions.

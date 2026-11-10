@@ -1,4 +1,5 @@
 import pg from "pg";
+import { rdsSsl } from "@theckards/database";
 import { env } from "./env";
 
 const globalPool = globalThis as typeof globalThis & { __theckardsPool?: pg.Pool };
@@ -12,7 +13,7 @@ export function getPool(): pg.Pool {
     user: config.DB_USER,
     password: config.DB_PASSWORD,
     database: config.DB_NAME,
-    ssl: { rejectUnauthorized: true },
+    ssl: rdsSsl,
     max: 10,
     connectionTimeoutMillis: 3_000,
     statement_timeout: 5_000,

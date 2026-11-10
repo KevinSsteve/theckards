@@ -17,6 +17,7 @@
     "test": "vitest --run"
   },
   "dependencies": {
+    "aws-ssl-profiles": "^1.1.2",
     "pg": "^8.13.0"
   },
   "devDependencies": {

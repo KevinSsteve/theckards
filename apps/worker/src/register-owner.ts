@@ -1,4 +1,5 @@
 import pg from "pg";
+import { rdsSsl } from "@theckards/database";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -12,7 +13,7 @@ const client = new pg.Client({
   database: process.env.DB_NAME ?? "theckards",
   user: required("DB_ADMIN_USER"),
   password: required("DB_ADMIN_PASSWORD"),
-  ssl: { rejectUnauthorized: true },
+  ssl: rdsSsl,
 });
 await client.connect();
 try {
