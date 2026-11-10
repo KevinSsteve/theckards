@@ -12,7 +12,9 @@ to cryptography is in the [README](../README.md); the part worth noting here is 
 decorative. The seal impression is a pure, tested function of the seal identifier
 ([`packages/domain/src/seal-mark.ts`](../packages/domain/src/seal-mark.ts)) shared by two very different
 renderers: the PDF worker draws it with `pdf-lib`, and the verification page draws the same geometry as SVG, so
-the mark on paper and the mark on screen cannot drift apart.
+the mark on paper and the mark on screen cannot drift apart. A test decompresses the generated PDF's content
+stream and asserts that the printed polygon is exactly the 24 vertices the function returns
+([`apps/worker/src/pdf.test.ts`](../apps/worker/src/pdf.test.ts)), so the promise is checked rather than claimed.
 
 ## Kiro features used
 
@@ -33,10 +35,13 @@ the expand-only migration rule, which matters because production has already run
 Steering was not decoration. Three concrete cases:
 
 **1. An ADR before every AWS service.** `tech.md` requires a decision record with the fixed monthly cost, the
-simpler alternative and the operational risk before adopting a service. Result: [19 ADRs](adr/), and a
+simpler alternative and the operational risk before adopting a service. Result: [20 ADRs](adr/), and a
 deliberately cheaper architecture. [ADR-002](adr/002-database.md) rejected Aurora for RDS PostgreSQL single-AZ;
 [ADR-018](adr/018-in-person-qr-signing.md) replaced email delivery with in-person QR signing at zero added cost
-after Amazon SES denied production access.
+after Amazon SES denied production access;
+[ADR-020](adr/020-evidence-malware-scanning.md) scans uploaded evidence with GuardDuty Malware Protection for S3
+in independent mode, at US$0 fixed per month, instead of an always-on ClamAV task at roughly US$9 per month whose
+virus definitions we would have had to own.
 
 **2. Legal text cannot ship as a draft.** `production.md` states that the production build fails with legal texts
 in draft. This became `legalApprovalBlockers` in [`packages/domain/src/legal.ts`](../packages/domain/src/legal.ts)
