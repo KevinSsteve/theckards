@@ -1,9 +1,10 @@
 openapi: 3.1.0
 info:
   title: Theckards API
-  version: 0.3.0
+  version: 0.4.0
   license:
-    name: Proprietary
+    name: Apache-2.0
+    identifier: Apache-2.0
 servers:
   - url: https://theckards.linkealls.com
 paths:
@@ -546,6 +547,63 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         '200': { description: The stored file }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/dossier:
+    get:
+      summary: The caller's own dossiers for this agreement, with build status
+      description: >-
+        Each archive contains the requesting party's private notes, so a party sees only the dossiers they asked
+        for, never the other party's.
+      operationId: listDossiers
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+      responses:
+        '200': { description: Dossier list }
+        '404': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Queue a dossier build; the worker assembles, hashes and seals the archive
+      operationId: requestDossier
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202': { description: Build queued }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/dossier/{requestId}/file:
+    get:
+      summary: Download the sealed dossier archive, for the party who requested it only
+      operationId: downloadDossier
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: The ZIP archive }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/dossier/{requestId}/receipt:
+    get:
+      summary: The dossier's integrity receipt, delivered beside the archive
+      operationId: downloadDossierReceipt
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Signed receipt }
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
   /api/agreements/{id}/documents/final:

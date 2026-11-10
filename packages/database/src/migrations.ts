@@ -720,4 +720,48 @@ WHERE document_type = 'PRIVACY' AND locale = 'en-US' AND version = 4 AND status 
   AND body_md NOT LIKE '%Evidence files:%';
 `,
   },
+  {
+    id: "0013",
+    name: "dossier_requests",
+    // S6.3. One row per dossier a party asks for. The row is the job's state machine: PENDING until the worker
+    // has sealed an archive, then READY or FAILED, and never back again. The archive's own identity (key, hash,
+    // seal) can only be written once, so a retried or duplicated job can never point a request at different
+    // bytes than the ones its receipt was signed over.
+    sql: `
+CREATE TABLE IF NOT EXISTS dossier_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agreement_id uuid NOT NULL REFERENCES agreements(id),
+  party_id uuid NOT NULL REFERENCES parties(id),
+  status text NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'READY', 'FAILED')),
+  error_code text CHECK (error_code IS NULL OR char_length(error_code) <= 60),
+  s3_key text,
+  sha256 char(64),
+  bytes integer CHECK (bytes IS NULL OR bytes > 0),
+  sealed_document_id uuid REFERENCES sealed_documents(id),
+  client_key char(64) NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  ready_at timestamptz,
+  UNIQUE (party_id, client_key),
+  CHECK ((status = 'READY') = (s3_key IS NOT NULL AND sha256 IS NOT NULL AND sealed_document_id IS NOT NULL AND ready_at IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS dossier_requests_agreement_idx ON dossier_requests(agreement_id, created_at DESC);
+
+CREATE OR REPLACE FUNCTION dossier_requests_forward_only() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE'
+     OR NEW.agreement_id IS DISTINCT FROM OLD.agreement_id OR NEW.party_id IS DISTINCT FROM OLD.party_id
+     OR NEW.client_key IS DISTINCT FROM OLD.client_key OR NEW.created_at IS DISTINCT FROM OLD.created_at
+     OR OLD.status <> 'PENDING'
+     OR (OLD.s3_key IS NOT NULL AND NEW.s3_key IS DISTINCT FROM OLD.s3_key)
+     OR (OLD.sha256 IS NOT NULL AND NEW.sha256 IS DISTINCT FROM OLD.sha256) THEN
+    RAISE EXCEPTION 'dossier requests only move forward from PENDING' USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS dossier_requests_forward_only ON dossier_requests;
+CREATE TRIGGER dossier_requests_forward_only BEFORE UPDATE OR DELETE ON dossier_requests
+FOR EACH ROW EXECUTE FUNCTION dossier_requests_forward_only();
+`,
+  },
 ] as const;

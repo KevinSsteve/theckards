@@ -67,6 +67,12 @@ exchange messages, attach evidence files that are scanned for malware before the
 where each side states its view and proposes a resolution. A resolution exists only as an addendum both parties
 accept and sign, sealed the same way as the original.
 
+Either party can then export the whole record as a **dossier**: one archive holding the sealed documents and
+their receipts, every version of the terms, the signatures, the declarations, the messages, the evidence and any
+case. Every file is listed in `manifest.json` with its SHA-256, and the archive is itself sealed, so its own hash
+sits in a signed receipt. A reader with nothing but the file, `sha256sum` and `openssl` can confirm all of it;
+`scripts/verify-dossier.mjs` does the same automatically and imports none of the application's code.
+
 ### What it deliberately refuses to do
 
 The product has eleven non-negotiable guardrails in [`.kiro/steering/product.md`](../.kiro/steering/product.md),
@@ -115,9 +121,9 @@ agent hooks, MCP and Powers, with the steering documents doing most of the work.
 
 ### What is next
 
-Entitlements and billing (S7), the dossier export (S6.3), a trust profile built only from counts with visible
-provenance (S10), and the AI assistant (S9), which is specified to fill schema fields only — never to write
-clauses, sign, or decide a case, and to receive masked text that is never stored.
+Entitlements and billing (S7), a trust profile built only from counts with visible provenance (S10), and the AI
+assistant (S9), which is specified to fill schema fields only — never to write clauses, sign, or decide a case,
+and to receive masked text that is never stored.
 
 ---
 

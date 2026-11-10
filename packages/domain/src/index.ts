@@ -9,3 +9,5 @@ export * from "./receipt.js";
 export * from "./cases.js";
 export * from "./seal-mark.js";
 export * from "./file-type.js";
+export * from "./zip.js";
+export * from "./dossier.js";

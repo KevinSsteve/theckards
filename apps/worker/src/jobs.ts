@@ -7,6 +7,7 @@ import { EVIDENCE_TYPES, detectEvidenceType, type AgreementSection, type SealedR
 import type pg from "pg";
 import { decryptText } from "./crypto.js";
 import { pool, transaction } from "./db.js";
+import { buildDossier } from "./dossier.js";
 import { buildMime } from "./mime.js";
 import { renderAgreementPdf, type FinalSigner } from "./pdf.js";
 import { sealIdFor, sha256Hex, signReceipt } from "./seal.js";
@@ -408,6 +409,7 @@ export async function processEnvelope(envelope: QueueEnvelope): Promise<void> {
     case "addendum.render": await renderAddendumPreview(envelope.payload); break;
     case "seal.addendum": await sealAddendum(envelope.payload); break;
     case "evidence.scanned": await evidenceScanned(envelope.payload); break;
+    case "dossier.build": await buildDossier(envelope.payload); break;
     default: throw new Error("Unsupported job topic");
   }
   await pool.query("INSERT INTO processed_jobs(job_id, topic) VALUES ($1, $2) ON CONFLICT (job_id) DO NOTHING", [envelope.id, envelope.topic]);

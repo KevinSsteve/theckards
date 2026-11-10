@@ -73,6 +73,11 @@ Working from specs surfaced defects that a prompt-by-prompt build would likely h
 - **A silently mutable seal.** A retried sealing job re-rendered the PDF and overwrote the stored file. After any
   change to the renderer, the sealed document would no longer match its signed receipt, and the copy each party
   downloaded would fail verification. Sealing now refuses to regenerate an existing seal.
+- **A manifest nobody could check.** The dossier's acceptance criterion is that the archive verifies itself. The
+  first version wrote `manifest.json` with a trailing newline while hashing the bytes without it, so the receipt's
+  `content_sha256` would never have matched what a reader gets from `sha256sum manifest.json`. The archive is now
+  written byte for byte as hashed, and an independent script that imports none of the application's code checks
+  every hash and the signature.
 - **Vulnerable base images.** The Debian base image carried six high-severity CVEs with no vendor fix. Two
   candidate bases were built and scanned before switching to Alpine with an OS package upgrade. Both production
   images now scan with zero findings.

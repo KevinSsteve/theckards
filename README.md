@@ -1,6 +1,6 @@
 # Theckards
 
-A trust layer for agreements between people who have already decided to deal with each other. Two parties create an agreement from a guided template in under 30 seconds. They sign it in person with a single-use QR code, keep a record of confirmations, messages and notes, and get a sealed PDF with a verifiable integrity receipt.
+A trust layer for agreements between people who have already decided to deal with each other. Two parties create an agreement from a guided template in under 30 seconds. They sign it in person with a single-use QR code, keep a record of confirmations, messages, evidence and notes, and get a sealed PDF with a verifiable integrity receipt. Either party can export the whole record as a **dossier**: one archive that lists every file with its SHA-256, is sealed like any other document, and can be checked years later with `sha256sum` and `openssl` alone.
 
 Production: https://theckards.linkealls.com (AWS, us-east-1).
 
@@ -69,6 +69,18 @@ Migrations run as a one-off ECS task. See [`docs/runbooks/migration-failure.md`]
 ## Verify a record
 
 Anyone can check a sealed PDF at https://theckards.linkealls.com/verify. The file is hashed locally in the browser and never uploaded. The offline method is described at `/verify/how`.
+
+A dossier verifies itself. [`scripts/verify-dossier.mjs`](scripts/verify-dossier.mjs) imports nothing from this
+repository and checks the archive the way an outside auditor would:
+
+```sh
+node scripts/verify-dossier.mjs dossier.zip dossier.receipt.json keys.json
+```
+
+It confirms that every file matches the hash the manifest claims, that `manifest.json` matches the receipt's
+`content_sha256`, that the archive matches the receipt's `sha256`, and that the signature verifies against the key
+published at `/.well-known/theckards-keys.json`. `README.txt` inside the archive explains how to do the same by
+hand.
 
 ## License
 
