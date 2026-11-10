@@ -217,7 +217,8 @@ export class AppStack extends cdk.Stack {
       functionName: `${p}-mail-forwarder`,
       runtime: lambda.Runtime.NODEJS_22_X, architecture: lambda.Architecture.ARM_64,
       handler: "index.handler", code: lambda.Code.fromAsset(path.join(__dirname, "../lambda/mail-forwarder")),
-      memorySize: 256, timeout: cdk.Duration.seconds(30), reservedConcurrentExecutions: 5,
+      // No reserved concurrency: the account limit is 10, which is also AWS's minimum unreserved pool.
+      memorySize: 256, timeout: cdk.Duration.seconds(30),
       environment: {
         FORWARDS: JSON.stringify(forwardMap), BUCKET: inboundMail.bucketName, PREFIX: "inbox/",
         FROM_ADDRESS: `forwarder@${domain}`, CONFIG_SET: configSet.configurationSetName,
