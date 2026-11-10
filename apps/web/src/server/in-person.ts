@@ -156,7 +156,8 @@ export async function confirmInPerson(userId: string, agreementId: string, code:
       const attempts = session.attempts + 1;
       // Commit the failed attempt; the error is raised after the transaction.
       await client.query(
-        "UPDATE in_person_sessions SET attempts = $2, status = CASE WHEN $2 >= $3 THEN 'CANCELLED' ELSE status END WHERE id = $1",
+        // Explicit casts: PostgreSQL cannot infer one type for $2 used as smallint and in a comparison.
+        "UPDATE in_person_sessions SET attempts = $2::int, status = CASE WHEN $2::int >= $3::int THEN 'CANCELLED' ELSE status END WHERE id = $1",
         [session.id, attempts, MAX_CODE_ATTEMPTS],
       );
       return { ok: false as const, attemptsLeft: MAX_CODE_ATTEMPTS - attempts };

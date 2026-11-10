@@ -47,3 +47,12 @@ describe("in-person QR access (IDOR)", () => {
     expect(counterpartyView({ ...done, completedAt: new Date(Date.now() - 3 * 3_600_000) }, device, true).status).toBe("UNAVAILABLE");
   });
 });
+
+describe("wrong-code attempt counter (regression)", () => {
+  it("casts the reused attempts parameter so PostgreSQL can type it and the limit is enforced", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(new globalThis.URL("./in-person.ts", import.meta.url), "utf8");
+    expect(source).toContain("SET attempts = $2::int, status = CASE WHEN $2::int >= $3::int");
+    expect(source).not.toMatch(/SET attempts = \$2, status = CASE WHEN \$2 >=/);
+  });
+});
