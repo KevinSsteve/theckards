@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { inflateSync } from "node:zlib";
 import { sealMark } from "@theckards/domain";
 import { describe, expect, it } from "vitest";
-import { renderAgreementPdf } from "./pdf.js";
+import { printedVerifyUrl, renderAgreementPdf } from "./pdf.js";
 
 const input = {
   agreementId: "00000000-0000-0000-0000-000000000001",
@@ -82,5 +82,25 @@ describe("agreement PDF", () => {
 
   it("draws no impression before the agreement is sealed", async () => {
     expect(printedImpression(await renderAgreementPdf(input))).toEqual([]);
+  });
+});
+
+// Found by reading a real sealed record: the printed address ran under the seal and off the page because it
+// carried the seal query parameter. The QR code keeps the full URL; the printed line is what a person types.
+describe("the printed verification address", () => {
+  it("drops the seal parameter that made the line overflow the page", () => {
+    expect(printedVerifyUrl("https://theckards.linkealls.com/verify?seal=a9b3b22e-93e1-5ca7-b495-7d4ae2d01d03"))
+      .toBe("https://theckards.linkealls.com/verify");
+  });
+
+  it("leaves a plain address untouched", () => {
+    expect(printedVerifyUrl("https://theckards.linkealls.com/verify")).toBe("https://theckards.linkealls.com/verify");
+    expect(printedVerifyUrl("https://theckards.linkealls.com/verify/")).toBe("https://theckards.linkealls.com/verify");
+  });
+
+  it("stays short enough to print beside the seal", async () => {
+    const bytes = await renderAgreementPdf(input, { ...sealed("b932630c-7185-5168-b469-745fd725c0c9"), verifyUrl: "https://theckards.linkealls.com/verify?seal=b932630c-7185-5168-b469-745fd725c0c9" });
+    // The impression must still be drawn: the URL change must not disturb the layout that follows it.
+    expect(printedImpression(bytes)).toEqual(vertices("b932630c-7185-5168-b469-745fd725c0c9"));
   });
 });

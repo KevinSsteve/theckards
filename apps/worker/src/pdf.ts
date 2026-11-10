@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import fontkit from "@pdf-lib/fontkit";
-import { renderAgreement, sealMark, type AgreementSection, type TemplateId } from "@theckards/domain";
+import { SEAL_MARK_SIZE, renderAgreement, sealMark, type AgreementSection, type TemplateId } from "@theckards/domain";
 import { PDFDocument, PDFFont, PDFPage, degrees, rgb } from "pdf-lib";
 import QRCode from "qrcode";
 
@@ -26,6 +26,15 @@ export interface FinalOptions {
   signers: readonly FinalSigner[];
   verifyUrl: string;
   watermark: boolean;
+}
+
+/**
+ * The verification address a person reads off the page. The QR code beside it carries the full URL, including
+ * the seal parameter; printing that parameter as text pushed the line under the seal impression and off the
+ * right edge of the page, so the reader saw a truncated address.
+ */
+export function printedVerifyUrl(verifyUrl: string): string {
+  return verifyUrl.split("?")[0]!.replace(/\/+$/, "");
 }
 
 const require = createRequire(import.meta.url);
@@ -139,7 +148,14 @@ export async function renderAgreementPdf(input: {
   ensure(130);
   page.drawImage(qrImage, { x: margin, y: y - 110, width: 110, height: 110 });
   page.drawText("Verify this record:", { x: margin + 125, y: y - 40, size: 10, font });
-  page.drawText(final.verifyUrl, { x: margin + 125, y: y - 56, size: 8, font, color: muted });
+  // The QR carries the full URL including the seal parameter. The printed line is for a person to type, so it
+  // drops the query and is shrunk if needed: a long URL used to run under the seal and off the page edge.
+  const printedUrl = printedVerifyUrl(final.verifyUrl);
+  const urlLeft = margin + 125;
+  const urlWidth = width - margin - SEAL_MARK_SIZE - 12 - urlLeft;
+  let urlSize = 8;
+  while (urlSize > 5 && font.widthOfTextAtSize(printedUrl, urlSize) > urlWidth) urlSize -= 0.5;
+  page.drawText(printedUrl, { x: urlLeft, y: y - 56, size: urlSize, font, color: muted });
 
   // The seal impression: pressed from the seal id alone, so the same seal always shows the same mark.
   const mark = sealMark(final.sealId);

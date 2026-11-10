@@ -116,12 +116,15 @@ function InPersonPanel({ id, lockVersion }: { id: string; lockVersion: number })
     if (next.agreementState === "EXECUTED") window.location.reload();
   }, [id]);
 
+  // Polls from the moment the panel mounts, not only after this tab asked for a QR code. The counterparty may
+  // already have signed and be holding their six-digit code when the creator reloads the page or returns to it
+  // on another tab; without this, the confirmation form never appeared and the only way forward was a new QR
+  // code, which invalidates the code the other person is showing.
   useEffect(() => {
-    if (!qr) return;
     void refresh();
     const timer = window.setInterval(() => { void refresh(); }, 2_000);
     return () => window.clearInterval(timer);
-  }, [qr, refresh]);
+  }, [refresh]);
 
   async function start() {
     setBusy(true); setMessage(""); setCode("");
@@ -135,7 +138,7 @@ function InPersonPanel({ id, lockVersion }: { id: string; lockVersion: number })
   const ended = view && ["EXPIRED", "CANCELLED"].includes(view.status);
   return <section className="card">
     <h2>2. Sign with the other party, in person</h2>
-    {!qr && <>
+    {!qr && !awaiting && !ended && <>
       <p>With the other party next to you, show them a QR code. They scan it with their phone camera, review the agreement and sign on their own phone. Their phone then shows a 6-digit code that you type here.</p>
       <button type="button" disabled={busy} onClick={start}>Show QR code</button>
     </>}
