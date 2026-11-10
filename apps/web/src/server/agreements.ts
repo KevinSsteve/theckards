@@ -1,4 +1,4 @@
-import { canonicalJson, renderAgreement, transition, validateTemplateFields, type AgreementState, type TemplateId } from "@theckards/domain";
+import { canonicalJson, renderAgreement, templateDefinitions, templateFieldErrors, transition, validateTemplateFields, type AgreementState, type TemplateId } from "@theckards/domain";
 import type pg from "pg";
 import { decryptText, encryptText, hmac, randomToken, sha256 } from "./crypto";
 import { getPool, inTransaction } from "./db";
@@ -89,11 +89,13 @@ function mapAgreement(row: AgreementRow): AgreementRecord {
 }
 
 function validFields(templateId: TemplateId, fields: unknown): Record<string, unknown> {
-  try {
-    return validateTemplateFields(templateId, fields) as Record<string, unknown>;
-  } catch {
-    throw new ProblemError(422, "Validation Failed", "The template fields are invalid.");
+  const errors = templateFieldErrors(templateId, fields);
+  if (Object.keys(errors).length > 0) {
+    const labels = new Map(templateDefinitions[templateId].fields.map((field) => [field.key, field.label]));
+    const detail = Object.entries(errors).map(([key, message]) => `${labels.get(key) ?? key}: ${message}`).join(" · ");
+    throw new ProblemError(422, "Validation Failed", detail);
   }
+  return validateTemplateFields(templateId, fields) as Record<string, unknown>;
 }
 
 function contentHash(templateId: TemplateId, version: number, title: string, fields: unknown): string {

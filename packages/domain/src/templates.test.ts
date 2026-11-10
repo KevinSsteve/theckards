@@ -24,3 +24,20 @@ describe("agreement templates", () => {
     expect(canonicalJson({ z: 1, a: { d: 2, b: true } })).toBe('{"a":{"b":true,"d":2},"z":1}');
   });
 });
+
+describe("money fields", () => {
+  const base = { itemDescription: "Road bicycle", paymentMethod: "cash", deliveryDate: "2026-11-20", deliveryMethod: "In person" };
+  it("accepts whole and one-decimal amounts and stores two decimals", async () => {
+    const { validateTemplateFields } = await import("./templates.js");
+    for (const [input, stored] of [["350", "350.00"], ["350.5", "350.50"], [" 0400.00 ", "400.00"]] as const) {
+      expect((validateTemplateFields("purchase_sale", { ...base, price: input }) as { price: string }).price).toBe(stored);
+    }
+  });
+  it("reports the failing field without echoing the value", async () => {
+    const { templateFieldErrors } = await import("./templates.js");
+    const errors = templateFieldErrors("purchase_sale", { ...base, price: "35O,00" });
+    expect(Object.keys(errors)).toEqual(["price"]);
+    expect(errors.price).not.toContain("35O");
+    expect(templateFieldErrors("purchase_sale", { ...base, price: "350" })).toEqual({});
+  });
+});

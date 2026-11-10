@@ -18,7 +18,14 @@ export interface AgreementSection {
 }
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
-const money = z.string().regex(/^\d{1,9}(?:\.\d{2})$/, "Use an amount such as 400.00");
+/** Accepts "400", "400.5" or "400.50"; stores the canonical two-decimal form so hashes stay stable. */
+export function normalizeMoney(value: string): string {
+  const [whole = "0", cents = ""] = value.split(".");
+  return `${BigInt(whole).toString()}.${cents.padEnd(2, "0")}`;
+}
+const money = z.string().trim()
+  .regex(/^\d{1,9}(?:\.\d{1,2})?$/, "Use an amount such as 400 or 400.00")
+  .transform(normalizeMoney);
 const paymentMethod = z.enum(["cash", "bank_transfer", "payment_app", "other"]);
 const shortText = z.string().trim().min(2).max(200);
 const longText = z.string().trim().min(3).max(2_000);
@@ -105,6 +112,19 @@ export const templateDefinitions: Readonly<Record<TemplateId, TemplateDefinition
     ],
   },
 };
+
+/** Field-level messages safe to show to the user (no values echoed back). */
+export function templateFieldErrors(templateId: TemplateId, fields: unknown): Record<string, string> {
+  const schema = templateId === "purchase_sale" ? PurchaseSaleFieldsSchema : templateId === "services" ? ServicesFieldsSchema : GeneralFieldsSchema;
+  const result = schema.safeParse(fields);
+  if (result.success) return {};
+  const errors: Record<string, string> = {};
+  for (const issue of result.error.issues) {
+    const key = String(issue.path[0] ?? "fields");
+    errors[key] ??= issue.message;
+  }
+  return errors;
+}
 
 export function validateTemplateFields(templateId: TemplateId, fields: unknown): TemplateFields {
   switch (templateId) {
