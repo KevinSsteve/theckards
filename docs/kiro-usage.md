@@ -23,9 +23,10 @@ the mark on paper and the mark on screen cannot drift apart.
 | **Vibe coding** | Interactive sessions for implementation, debugging production incidents and reviewing diffs. |
 | **Powers** | `playwright` for end-to-end tests against production with two browser contexts (one per device), and `github-cli` for publishing. |
 | **MCP** | The Playwright MCP server provides the browser automation tools used for those production tests. |
+| **Agent hooks** | Two hooks in [`.kiro/hooks`](../.kiro/hooks): the fast pure-domain test suite runs whenever domain logic changes, and editing the migration file prompts a check that it was only appended to, never rewritten. |
 
-Agent hooks were not used. The repeated checks (`pnpm lint && pnpm -r typecheck && pnpm test`, image scans,
-`cdk-nag`) were run explicitly before each deploy and are documented in the steering rules instead.
+Both hooks come from mistakes this project actually made: a guardrail regression that unit tests caught late, and
+the expand-only migration rule, which matters because production has already run every earlier migration.
 
 ## Where steering changed the outcome
 
@@ -64,6 +65,9 @@ Working from specs surfaced defects that a prompt-by-prompt build would likely h
   reproduced against the real database, fixed and covered by a regression test.
 - **Sessions outliving their account.** Disabling a Cognito user left application sessions working. Sessions are
   now revalidated against Cognito every five minutes.
+- **A silently mutable seal.** A retried sealing job re-rendered the PDF and overwrote the stored file. After any
+  change to the renderer, the sealed document would no longer match its signed receipt, and the copy each party
+  downloaded would fail verification. Sealing now refuses to regenerate an existing seal.
 - **Vulnerable base images.** The Debian base image carried six high-severity CVEs with no vendor fix. Two
   candidate bases were built and scanned before switching to Alpine with an OS package upgrade. Both production
   images now scan with zero findings.

@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Domain tests on save",
+      "trigger": "PostFileSave",
+      "description": "Runs the fast pure-domain test suite whenever domain logic changes, so guardrail and state-machine regressions surface immediately instead of at deploy time.",
+      "matcher": "packages/domain/src/.*\\.ts$",
+      "action": {
+        "type": "command",
+        "command": "cd /projects/sandbox && pnpm --filter @theckards/domain test 2>&1 | tail -6",
+        "timeout": 120
+      }
+    }
+  ]
+}

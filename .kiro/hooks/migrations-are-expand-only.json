@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Migrations are expand-only",
+      "trigger": "PostFileSave",
+      "description": "Reminds that migrations are expand-only: an applied migration must never be edited, only a new one added.",
+      "matcher": "packages/database/src/migrations\\.ts$",
+      "action": {
+        "type": "agent",
+        "prompt": "You just changed packages/database/src/migrations.ts. Migrations in this project are expand-only and an already-applied migration must never be edited, because production has run it. Confirm you only appended a new migration with a fresh id. If you modified the SQL of an existing one, revert that part and add a new migration instead. Also check that the change is backward compatible with the currently deployed image, since the migration runs before the new image is live."
+      }
+    }
+  ]
+}
