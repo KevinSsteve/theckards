@@ -3,5 +3,5 @@ packages:
   - "packages/*"
   - "infra"
 
-onlyBuiltDependencies:
-  - esbuild
+allowBuilds:
+  esbuild: true
