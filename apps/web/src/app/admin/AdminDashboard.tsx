@@ -79,7 +79,14 @@ function LegalCard({ initial, editable }: { initial: LegalDocument; editable: bo
     <label>Title<input value={title} disabled={!editable || !isDraft || busy} onChange={(event) => setTitle(event.target.value)} /></label>
     <label>Markdown<textarea value={bodyMd} disabled={!editable || !isDraft || busy} onChange={(event) => setBodyMd(event.target.value)} /></label>
     {message && <p role="status" className={message.includes("failed") ? "error" : "success"}>{message}</p>}
-    {isDraft && <div className="actions"><button className="secondary" disabled={!editable || busy} onClick={save}>Save draft</button><button disabled={!editable || busy} onClick={approve}>Approve</button></div>}
+    {isDraft
+      ? <div className="actions"><button className="secondary" disabled={!editable || busy} onClick={save}>Save draft</button><button disabled={!editable || busy} onClick={approve}>Approve</button></div>
+      : <button className="secondary" disabled={!editable || busy} onClick={async () => {
+          setBusy(true); setMessage("");
+          const response = await fetch("/api/admin/legal", { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf() }, body: JSON.stringify({ documentType: document.documentType, locale: document.locale, title, bodyMd }) });
+          const result = await response.json() as { detail?: string };
+          setMessage(response.ok ? "Next draft created. Reload to edit it." : (result.detail ?? "Draft creation failed.")); setBusy(false);
+        }}>Create next draft</button>}
   </article>;
 }
 

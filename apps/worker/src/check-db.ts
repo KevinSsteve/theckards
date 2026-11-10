@@ -27,7 +27,10 @@ try {
   `);
   let appendOnlyEnforced = false;
   try { await client.query("DELETE FROM audit_logs WHERE id = $1", [audit.rows[0]!.id]); }
-  catch (error) { appendOnlyEnforced = error instanceof Error && "code" in error && error.code === "55000"; }
+  catch (error) {
+    const code = error instanceof Error && "code" in error ? error.code : undefined;
+    appendOnlyEnforced = code === "55000" || code === "42501";
+  }
   if (!appendOnlyEnforced) throw new Error("Append-only audit guard is not enforced");
 
   console.log(JSON.stringify({

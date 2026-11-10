@@ -30,10 +30,23 @@ paths:
       security: [{ adminSession: [] }]
       parameters: [{ name: key, in: path, required: true, schema: { type: string } }]
       responses: { '200': { description: Setting updated }, '403': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' } }
+  /api/admin/settings/{key}/history:
+    get:
+      security: [{ adminSession: [] }]
+      parameters: [{ name: key, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Version history }, '403': { $ref: '#/components/responses/Problem' } }
+  /api/admin/settings/{key}/rollback:
+    post:
+      security: [{ adminSession: [] }]
+      parameters: [{ name: key, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Setting rolled back as a new version }, '403': { $ref: '#/components/responses/Problem' } }
   /api/admin/legal:
     get:
       security: [{ adminSession: [] }]
       responses: { '200': { description: Legal documents }, '403': { $ref: '#/components/responses/Problem' } }
+    post:
+      security: [{ adminSession: [] }]
+      responses: { '201': { description: Next draft version created }, '403': { $ref: '#/components/responses/Problem' } }
 components:
   securitySchemes:
     userSession: { type: apiKey, in: cookie, name: __Host-theckards_session }

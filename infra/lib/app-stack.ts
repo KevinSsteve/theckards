@@ -309,6 +309,7 @@ export class AppStack extends cdk.Stack {
         `arn:${this.partition}:appconfig:${this.region}:${this.account}:application/${acApp.ref}`,
         `arn:${this.partition}:appconfig:${this.region}:${this.account}:application/${acApp.ref}/*`,
         `arn:${this.partition}:appconfig:${this.region}:${this.account}:deploymentstrategy/*`,
+        `arn:${this.partition}:appconfig:${this.region}:aws:deploymentstrategy/*`,
       ],
     }));
     const webLogs = new logs.LogGroup(this, "WebLogs", { logGroupName: `/theckards/${envName}/web`, retention: logs.RetentionDays.THREE_MONTHS, removalPolicy: cdk.RemovalPolicy.RETAIN });

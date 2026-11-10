@@ -32,6 +32,7 @@ export async function updateSetting(input: {
   expectedVersion: number;
   actorId: string;
   requestId: string;
+  auditAction?: "SETTING_UPDATED" | "SETTING_ROLLED_BACK";
 }): Promise<StoredSetting> {
   const validated = validateSetting(input.key, input.value);
   return inTransaction(async (client) => {
@@ -52,7 +53,7 @@ export async function updateSetting(input: {
       [input.key, JSON.stringify(validated), nextVersion, input.actorId],
     );
     await writeAudit(client, {
-      actorType: "ADMIN", actorId: input.actorId, action: "SETTING_UPDATED", entityType: "app_setting",
+      actorType: "ADMIN", actorId: input.actorId, action: input.auditAction ?? "SETTING_UPDATED", entityType: "app_setting",
       entityId: input.key, requestId: input.requestId, before: previous.value, after: validated,
     });
     return { key: input.key, value: validated, version: nextVersion, updatedAt: new Date() };
@@ -65,4 +66,34 @@ export async function listAudit(limit = 100): Promise<Array<Record<string, unkno
     [Math.min(limit, 500)],
   );
   return result.rows;
+}
+
+export async function listSettingHistory(key: SettingKey): Promise<Array<{ version: number; value: unknown; changedAt: Date }>> {
+  const result = await getPool().query<{ version: number; value: unknown; changed_at: Date }>(
+    "SELECT version, value, changed_at FROM app_settings_history WHERE setting_key = $1 ORDER BY version DESC LIMIT 100",
+    [key],
+  );
+  return result.rows.map((row) => ({ version: row.version, value: row.value, changedAt: row.changed_at }));
+}
+
+export async function rollbackSetting(input: {
+  key: SettingKey;
+  targetVersion: number;
+  expectedVersion: number;
+  actorId: string;
+  requestId: string;
+}): Promise<StoredSetting> {
+  const target = await getPool().query<{ value: unknown }>(
+    "SELECT value FROM app_settings_history WHERE setting_key = $1 AND version = $2",
+    [input.key, input.targetVersion],
+  );
+  if (!target.rows[0]) throw new Error("Setting history version not found");
+  return updateSetting({
+    key: input.key,
+    value: target.rows[0].value,
+    expectedVersion: input.expectedVersion,
+    actorId: input.actorId,
+    requestId: input.requestId,
+    auditAction: "SETTING_ROLLED_BACK",
+  });
 }

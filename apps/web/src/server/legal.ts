@@ -91,3 +91,29 @@ export async function approveLegalDocument(input: { id: string; actorId: string;
     await writeAudit(client, { actorType: "ADMIN", actorId: input.actorId, action: "LEGAL_APPROVED", entityType: "legal_document", entityId: input.id, requestId: input.requestId, after: { documentType: document.document_type, locale: document.locale, version: document.version } });
   });
 }
+
+export async function createLegalDraft(input: {
+  documentType: LegalDocumentType;
+  locale: string;
+  title: string;
+  bodyMd: string;
+  actorId: string;
+  requestId: string;
+}): Promise<LegalDocument> {
+  return inTransaction(async (client: pg.PoolClient) => {
+    const latest = await client.query<{ version: number }>(
+      "SELECT version FROM legal_documents WHERE document_type = $1 AND locale = $2 ORDER BY version DESC LIMIT 1 FOR UPDATE",
+      [input.documentType, input.locale],
+    );
+    const version = (latest.rows[0]?.version ?? 0) + 1;
+    const created = await client.query(
+      `INSERT INTO legal_documents(document_type, locale, version, status, title, body_md, created_by)
+       VALUES ($1, $2, $3, 'DRAFT', $4, $5, $6)
+       RETURNING id, document_type, locale, version, status, title, body_md, approved_at`,
+      [input.documentType, input.locale, version, input.title, input.bodyMd, input.actorId],
+    );
+    const document = map(created.rows[0] as Record<string, unknown>);
+    await writeAudit(client, { actorType: "ADMIN", actorId: input.actorId, action: "LEGAL_DRAFT_CREATED", entityType: "legal_document", entityId: document.id, requestId: input.requestId, after: { documentType: document.documentType, locale: document.locale, version } });
+    return document;
+  });
+}
