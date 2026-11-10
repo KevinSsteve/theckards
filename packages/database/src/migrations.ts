@@ -2,7 +2,7 @@ import { agreementStateCheckSql } from "@theckards/domain";
 import { ESIGN_V1, NOTICE_V1, PRIVACY_V1, TERMS_V1 } from "./legal-v1.js";
 import { ESIGN_V2, PRIVACY_V2, PRIVACY_V2_REPLACEMENTS, TERMS_V2, TERMS_V2_REPLACEMENTS } from "./legal-v2.js";
 import { PRIVACY_V3_REPLACEMENTS } from "./legal-v3.js";
-import { ESIGN_V3_REPLACEMENTS, PRIVACY_V4_REPLACEMENTS } from "./legal-v4.js";
+import { ESIGN_V3_REPLACEMENTS, PRIVACY_V4_EVIDENCE_REPLACEMENTS, PRIVACY_V4_REPLACEMENTS } from "./legal-v4.js";
 
 const lit = (value: string) => `$legal$${value}$legal$`;
 const replaced = (column: string, pairs: ReadonlyArray<readonly [string, string]>) =>
@@ -663,6 +663,61 @@ DROP TRIGGER IF EXISTS addendum_signatures_append_only ON addendum_signatures;
 CREATE TRIGGER addendum_signatures_append_only BEFORE UPDATE OR DELETE ON addendum_signatures FOR EACH ROW EXECUTE FUNCTION prevent_append_only_change();
 ${nextDraftFromApproved("PRIVACY", 3, PRIVACY_V4_REPLACEMENTS)}
 ${nextDraftFromApproved("ESIGN", 2, ESIGN_V3_REPLACEMENTS)}
+`,
+  },
+  {
+    id: "0012",
+    name: "evidence_uploads",
+    // S5 part 3. Evidence is append-only: the uploader's declaration and, once set, the stored hash can never
+    // change, and the status may only advance from AWAITING_UPLOAD to PENDING to a terminal value.
+    // Visibility is earned: only a CLEAN scan sets stored_key, and only then can the other party read the file.
+    sql: `
+CREATE TABLE IF NOT EXISTS evidence (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agreement_id uuid NOT NULL REFERENCES agreements(id),
+  party_id uuid NOT NULL REFERENCES parties(id),
+  filename text NOT NULL CHECK (char_length(filename) BETWEEN 1 AND 255),
+  content_type text NOT NULL CHECK (content_type IN ('image/jpeg', 'image/png', 'image/webp', 'application/pdf')),
+  declared_bytes integer NOT NULL CHECK (declared_bytes BETWEEN 1 AND 26214400),
+  note text CHECK (note IS NULL OR char_length(note) <= 500),
+  quarantine_key text NOT NULL UNIQUE,
+  scan_status text NOT NULL DEFAULT 'AWAITING_UPLOAD'
+    CHECK (scan_status IN ('AWAITING_UPLOAD', 'PENDING', 'CLEAN', 'INFECTED', 'UNSUPPORTED', 'FAILED')),
+  scan_reason text,
+  stored_key text,
+  sha256 char(64),
+  stored_bytes integer,
+  client_key char(64) NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  uploaded_at timestamptz,
+  scanned_at timestamptz,
+  UNIQUE (party_id, client_key),
+  CHECK ((scan_status = 'CLEAN') = (stored_key IS NOT NULL AND sha256 IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS evidence_agreement_idx ON evidence(agreement_id, created_at);
+CREATE INDEX IF NOT EXISTS evidence_quarantine_idx ON evidence(quarantine_key) WHERE scan_status IN ('AWAITING_UPLOAD', 'PENDING');
+
+CREATE OR REPLACE FUNCTION evidence_append_only_change() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE'
+     OR NEW.agreement_id IS DISTINCT FROM OLD.agreement_id OR NEW.party_id IS DISTINCT FROM OLD.party_id
+     OR NEW.filename IS DISTINCT FROM OLD.filename OR NEW.content_type IS DISTINCT FROM OLD.content_type
+     OR NEW.declared_bytes IS DISTINCT FROM OLD.declared_bytes OR NEW.note IS DISTINCT FROM OLD.note
+     OR NEW.quarantine_key IS DISTINCT FROM OLD.quarantine_key OR NEW.created_at IS DISTINCT FROM OLD.created_at
+     OR (OLD.sha256 IS NOT NULL AND NEW.sha256 IS DISTINCT FROM OLD.sha256)
+     OR (OLD.stored_key IS NOT NULL AND NEW.stored_key IS DISTINCT FROM OLD.stored_key)
+     OR (OLD.scan_status NOT IN ('AWAITING_UPLOAD', 'PENDING') AND NEW.scan_status IS DISTINCT FROM OLD.scan_status) THEN
+    RAISE EXCEPTION 'evidence is append-only' USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS evidence_append_only ON evidence;
+CREATE TRIGGER evidence_append_only BEFORE UPDATE OR DELETE ON evidence FOR EACH ROW EXECUTE FUNCTION evidence_append_only_change();
+
+UPDATE legal_documents SET body_md = ${replaced("body_md", PRIVACY_V4_EVIDENCE_REPLACEMENTS)}
+WHERE document_type = 'PRIVACY' AND locale = 'en-US' AND version = 4 AND status = 'DRAFT'
+  AND body_md NOT LIKE '%Evidence files:%';
 `,
   },
 ] as const;

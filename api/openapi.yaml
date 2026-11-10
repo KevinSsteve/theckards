@@ -482,6 +482,72 @@ paths:
       responses:
         '200': { description: Sealed PDF }
         '404': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/evidence:
+    get:
+      summary: Party-only list of evidence with scan status; only a clean file can be downloaded
+      operationId: listEvidence
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+      responses:
+        '200': { description: Evidence list }
+        '404': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Request a presigned upload into the quarantine bucket, signed for one exact content type and length
+      operationId: requestEvidenceUpload
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, contentType, bytes]
+              properties:
+                filename: { type: string, minLength: 1, maxLength: 255 }
+                contentType: { type: string, enum: [image/jpeg, image/png, image/webp, application/pdf] }
+                bytes: { type: integer, minimum: 1, maximum: 26214400 }
+                note: { type: string, maxLength: 500 }
+      responses:
+        '201': { description: Presigned PUT URL valid for five minutes }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/evidence/{evidenceId}/confirm:
+    post:
+      summary: Report that the upload finished; the malware scan is started by S3, not by this call
+      operationId: confirmEvidenceUpload
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - name: evidenceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Scan pending }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/evidence/{evidenceId}/file:
+    get:
+      summary: Download an evidence file; only after a clean scan, always as an attachment
+      operationId: downloadEvidence
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - name: evidenceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: The stored file }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /api/agreements/{id}/documents/final:
     get:
       summary: Download the sealed final PDF

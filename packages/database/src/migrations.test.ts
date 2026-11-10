@@ -161,3 +161,28 @@ describe("cases and addenda migration (S5 part 2)", () => {
     expect(schema).not.toMatch(/status = 'APPROVED'\s*,/);
   });
 });
+
+describe("evidence migration (S5 part 3)", () => {
+  const schema = migrations.find((migration) => migration.id === "0012")?.sql ?? "";
+  it("only lets a file become visible through a clean scan, and keeps the declaration immutable", () => {
+    expect(schema).toContain("evidence_append_only");
+    expect(schema).toContain("CHECK ((scan_status = 'CLEAN') = (stored_key IS NOT NULL AND sha256 IS NOT NULL))");
+    expect(schema).toContain("declared_bytes integer NOT NULL CHECK (declared_bytes BETWEEN 1 AND 26214400)");
+    expect(schema).toContain("content_type IN ('image/jpeg', 'image/png', 'image/webp', 'application/pdf')");
+    expect(schema).toContain("OLD.scan_status NOT IN ('AWAITING_UPLOAD', 'PENDING')");
+  });
+  it("discloses evidence in the privacy draft using anchors the draft really contains", async () => {
+    const { PRIVACY_V3_REPLACEMENTS } = await import("./legal-v3.js");
+    const { PRIVACY_V4_REPLACEMENTS, PRIVACY_V4_EVIDENCE_REPLACEMENTS } = await import("./legal-v4.js");
+    const v3 = PRIVACY_V3_REPLACEMENTS.reduce((body, [from, to]) => body.replace(from, to), PRIVACY_V2);
+    const v4 = PRIVACY_V4_REPLACEMENTS.reduce((body, [from, to]) => body.replace(from, to), v3);
+    for (const [from, to] of PRIVACY_V4_EVIDENCE_REPLACEMENTS) { expect(v4).toContain(from); expect(to).not.toBe(from); }
+    const withEvidence = PRIVACY_V4_EVIDENCE_REPLACEMENTS.reduce((body, [from, to]) => body.replace(from, to), v4);
+    expect(withEvidence).toContain("Evidence files:");
+    expect(withEvidence).toContain("metadata such as where and when it was taken");
+    expect(legalApprovalBlockers(withEvidence)).toEqual([]);
+    // Idempotent: the update only runs while the draft has no evidence paragraph yet.
+    expect(schema).toContain("NOT LIKE '%Evidence files:%'");
+    expect(schema).toContain("version = 4 AND status = 'DRAFT'");
+  });
+});

@@ -28,6 +28,9 @@ import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import * as appscaling from "aws-cdk-lib/aws-applicationautoscaling";
 import * as cr from "aws-cdk-lib/custom-resources";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as events from "aws-cdk-lib/aws-events";
+import * as eventTargets from "aws-cdk-lib/aws-events-targets";
+import * as guardduty from "aws-cdk-lib/aws-guardduty";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
 import { NagSuppressions } from "cdk-nag";
@@ -108,6 +111,17 @@ export class AppStack extends cdk.Stack {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL, enforceSSL: true,
       objectLockEnabled: false, // G/sec. 9.1: no Object Lock by default
       lifecycleRules: [{ noncurrentVersionExpiration: cdk.Duration.days(90), abortIncompleteMultipartUploadAfter: cdk.Duration.days(7) }],
+      cors: [{ allowedMethods: [s3.HttpMethods.PUT], allowedOrigins: [`https://${domain}`], allowedHeaders: ["*"], maxAge: 3000 }],
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // Evidence lands here first and is never served from here. Objects are deleted once scanned, and expire
+    // anyway after 7 days so an abandoned upload cannot linger (ADR-020).
+    const quarantine = new s3.Bucket(this, "EvidenceQuarantine", {
+      bucketName: `${p}-evidence-quarantine-${this.account}`,
+      encryption: s3.BucketEncryption.KMS, encryptionKey: dataKey, bucketKeyEnabled: true,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL, enforceSSL: true,
+      lifecycleRules: [{ expiration: cdk.Duration.days(7), abortIncompleteMultipartUploadAfter: cdk.Duration.days(1) }],
       cors: [{ allowedMethods: [s3.HttpMethods.PUT], allowedOrigins: [`https://${domain}`], allowedHeaders: ["*"], maxAge: 3000 }],
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
@@ -329,6 +343,7 @@ export class AppStack extends cdk.Stack {
       DB_HOST: db.dbInstanceEndpointAddress, DB_PORT: db.dbInstanceEndpointPort, DB_NAME: "theckards",
       JOBS_QUEUE_URL: jobs.queueUrl,
       DOCUMENTS_BUCKET: documents.bucketName,
+      EVIDENCE_QUARANTINE_BUCKET: quarantine.bucketName,
       SEAL_KEY_ARN: sealKey.keyArn,
       DATA_KEY_ARN: dataKey.keyArn,
       USER_POOL_ID: userPool.userPoolId, USER_POOL_CLIENT_ID: userPoolClient.userPoolClientId,
@@ -376,6 +391,7 @@ export class AppStack extends cdk.Stack {
         `arn:${this.partition}:appconfig:${this.region}:aws:deploymentstrategy/*`,
       ],
     }));
+    quarantine.grantPut(webTask.taskRole);
     const webLogs = new logs.LogGroup(this, "WebLogs", { logGroupName: `/theckards/${envName}/web`, retention: logs.RetentionDays.THREE_MONTHS, removalPolicy: cdk.RemovalPolicy.RETAIN });
     webTask.addContainer("web", {
       image: ecs.ContainerImage.fromEcrRepository(base.webRepo, props.imageTag),
@@ -418,6 +434,8 @@ export class AppStack extends cdk.Stack {
     jobs.grantConsumeMessages(workerTask.taskRole);
     jobs.grantSendMessages(workerTask.taskRole);
     workerTask.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["kms:Sign", "kms:GetPublicKey", "kms:DescribeKey"], resources: [sealKey.keyArn] }));
+    quarantine.grantRead(workerTask.taskRole);
+    quarantine.grantDelete(workerTask.taskRole);
     const workerLogs = new logs.LogGroup(this, "WorkerLogs", { logGroupName: `/theckards/${envName}/worker`, retention: logs.RetentionDays.THREE_MONTHS, removalPolicy: cdk.RemovalPolicy.RETAIN });
     workerTask.addContainer("worker", {
       image: ecs.ContainerImage.fromEcrRepository(base.workerRepo, props.imageTag),
@@ -550,6 +568,82 @@ export class AppStack extends cdk.Stack {
     alarm("ses-bounce", new cloudwatch.Metric({ namespace: "AWS/SES", metricName: "Reputation.BounceRate", statistic: "Average", period: cdk.Duration.minutes(15) }), 0.05, "SES bounce rate > 5%", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 1);
     alarm("ses-complaint", new cloudwatch.Metric({ namespace: "AWS/SES", metricName: "Reputation.ComplaintRate", statistic: "Average", period: cdk.Duration.minutes(15) }), 0.001, "SES complaint rate > 0.1%", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 1);
 
+    // ---------- Evidence malware scanning (ADR-020) ----------
+    // GuardDuty Malware Protection for S3 as an independent feature: no detector, no fixed monthly cost.
+    const scanRole = new iam.Role(this, "EvidenceScanRole", {
+      roleName: `${p}-evidence-scan`,
+      assumedBy: new iam.ServicePrincipal("malware-protection-plan.guardduty.amazonaws.com"),
+      description: "Lets GuardDuty read and scan objects in the evidence quarantine bucket",
+    });
+    const managedRuleArn = `arn:${this.partition}:events:${this.region}:${this.account}:rule/DO-NOT-DELETE-AmazonGuardDutyMalwareProtectionS3*`;
+    scanRole.addToPolicy(new iam.PolicyStatement({
+      sid: "AllowManagedRuleToSendS3EventsToGuardDuty",
+      actions: ["events:PutRule", "events:DeleteRule", "events:PutTargets", "events:RemoveTargets"],
+      resources: [managedRuleArn],
+      conditions: { StringLike: { "events:ManagedBy": "malware-protection-plan.guardduty.amazonaws.com" } },
+    }));
+    scanRole.addToPolicy(new iam.PolicyStatement({
+      sid: "AllowGuardDutyToMonitorEventBridgeManagedRule",
+      actions: ["events:DescribeRule", "events:ListTargetsByRule"], resources: [managedRuleArn],
+    }));
+    scanRole.addToPolicy(new iam.PolicyStatement({
+      sid: "AllowEnableS3EventBridgeEvents",
+      actions: ["s3:PutBucketNotification", "s3:GetBucketNotification", "s3:ListBucket"], resources: [quarantine.bucketArn],
+    }));
+    scanRole.addToPolicy(new iam.PolicyStatement({
+      sid: "AllowPutValidationObject", actions: ["s3:PutObject"],
+      resources: [`${quarantine.bucketArn}/malware-protection-resource-validation-object`],
+    }));
+    scanRole.addToPolicy(new iam.PolicyStatement({
+      sid: "AllowMalwareScan", actions: ["s3:GetObject", "s3:GetObjectVersion"], resources: [`${quarantine.bucketArn}/*`],
+    }));
+    scanRole.addToPolicy(new iam.PolicyStatement({
+      sid: "AllowDecryptForMalwareScan", actions: ["kms:GenerateDataKey", "kms:Decrypt"], resources: [dataKey.keyArn],
+      conditions: { StringLike: { "kms:ViaService": `s3.${this.region}.amazonaws.com` } },
+    }));
+    const malwarePlan = new guardduty.CfnMalwareProtectionPlan(this, "EvidenceMalwareProtection", {
+      role: scanRole.roleArn,
+      protectedResource: { s3Bucket: { bucketName: quarantine.bucketName } },
+      // Tagging is billed separately and the result already arrives on EventBridge.
+      actions: { tagging: { status: "DISABLED" } },
+    });
+    malwarePlan.node.addDependency(scanRole);
+    malwarePlan.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
+
+    // Scan results drive the evidence state machine, through the existing queue (retries + DLQ included).
+    new events.Rule(this, "EvidenceScanResult", {
+      ruleName: `${p}-evidence-scan-result`,
+      description: "GuardDuty S3 malware scan results for the evidence quarantine bucket",
+      eventPattern: {
+        source: ["aws.guardduty"],
+        detailType: ["GuardDuty Malware Protection Object Scan Result"],
+        detail: { s3ObjectDetails: { bucketName: [quarantine.bucketName] } },
+      },
+      targets: [new eventTargets.SqsQueue(jobs, {
+        message: events.RuleTargetInput.fromObject({
+          id: events.EventField.fromPath("$.id"),
+          topic: "evidence.scanned",
+          payload: {
+            bucket: events.EventField.fromPath("$.detail.s3ObjectDetails.bucketName"),
+            key: events.EventField.fromPath("$.detail.s3ObjectDetails.objectKey"),
+            scanStatus: events.EventField.fromPath("$.detail.scanStatus"),
+            resultStatus: events.EventField.fromPath("$.detail.scanResultDetails.scanResultStatus"),
+          },
+        }),
+      })],
+    });
+
+    // If scanning degrades, evidence stays invisible (the safe direction) and the owner is paged.
+    new events.Rule(this, "EvidenceScanDegraded", {
+      ruleName: `${p}-evidence-scan-degraded`,
+      description: "Malware protection plan status warnings and errors (runbook: docs/runbooks/evidence-scanning.md)",
+      eventPattern: {
+        source: ["aws.guardduty"],
+        detailType: ["GuardDuty Malware Protection Resource Status Warning", "GuardDuty Malware Protection Resource Status Error"],
+      },
+      targets: [new eventTargets.SnsTopic(alerts)],
+    });
+
     // ---------- Optional GitHub Actions OIDC role ----------
     if (props.githubRepo) {
       const provider = iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(this, "GhOidc", `arn:${this.partition}:iam::${this.account}:oidc-provider/token.actions.githubusercontent.com`);
@@ -578,6 +672,7 @@ export class AppStack extends cdk.Stack {
     new cdk.CfnOutput(this, "ClusterName", { value: cluster.clusterName });
     new cdk.CfnOutput(this, "MigrationTaskDefinitionArn", { value: migrationTask.taskDefinitionArn });
     new cdk.CfnOutput(this, "MigrationSecurityGroupId", { value: migrationSg.securityGroupId });
+    new cdk.CfnOutput(this, "EvidenceQuarantineBucket", { value: quarantine.bucketName });
     new cdk.CfnOutput(this, "PrivateSubnetIds", { value: cdk.Fn.join(",", vpc.privateSubnets.map((subnet) => subnet.subnetId)) });
 
     // ---------- cdk-nag suppressions (each justified; see docs/adr) ----------

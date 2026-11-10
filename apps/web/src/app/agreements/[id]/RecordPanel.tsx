@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 
 interface Slot { kind: string; label: string; role: string; partyName: string; mine: boolean; declaredAt: string | null; note: string | null }
+interface Evidence {
+  id: string; filename: string; contentType: string; note: string | null; bytes: number | null; sha256: string | null;
+  status: string; statusLabel: string; mine: boolean; uploadedBy: string; createdAt: string; downloadable: boolean;
+}
+interface EvidenceList { legalReady: boolean; canUpload: boolean; items: Evidence[] }
+
 interface Entry { at: string; type: string; partyName: string | null; mine: boolean; text: string }
 interface RecordView {
   state: string; myRole: string; canConfirm: boolean; canWrite: boolean; legalReady: boolean;
@@ -18,6 +24,10 @@ const roleName = (role: string) => role.charAt(0) + role.slice(1).toLowerCase();
 
 export function RecordPanel({ id }: { id: string }) {
   const [record, setRecord] = useState<RecordView | null>(null);
+  const [evidence, setEvidence] = useState<EvidenceList | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [fileNote, setFileNote] = useState("");
+  const [uploading, setUploading] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState("");
@@ -26,13 +36,45 @@ export function RecordPanel({ id }: { id: string }) {
 
   const load = useCallback(async () => {
     try {
-      const response = await fetch(`/api/agreements/${id}/record`);
-      if (!response.ok) { setError("The record could not be loaded."); return; }
-      setRecord(await response.json() as RecordView);
+      const [recordResponse, evidenceResponse] = await Promise.all([
+        fetch(`/api/agreements/${id}/record`),
+        fetch(`/api/agreements/${id}/evidence`),
+      ]);
+      if (!recordResponse.ok) { setError("The record could not be loaded."); return; }
+      setRecord(await recordResponse.json() as RecordView);
+      if (evidenceResponse.ok) setEvidence(await evidenceResponse.json() as EvidenceList);
     } catch {
       setError("The record could not be loaded. Check your connection.");
     }
   }, [id]);
+
+  /** Uploads straight to S3 with the presigned PUT, then tells the server the upload finished. */
+  async function uploadEvidence() {
+    if (!file) return;
+    setUploading("Preparing the upload…"); setError("");
+    try {
+      const created = await fetch(`/api/agreements/${id}/evidence`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() },
+        body: JSON.stringify({ filename: file.name, contentType: file.type, bytes: file.size, ...(fileNote.trim() ? { note: fileNote.trim() } : {}) }),
+      });
+      const data = await created.json().catch(() => ({})) as { id?: string; uploadUrl?: string; detail?: string };
+      if (!created.ok || !data.uploadUrl || !data.id) { setError(data.detail ?? "The file was not accepted."); return; }
+      setUploading("Uploading…");
+      const put = await fetch(data.uploadUrl, { method: "PUT", headers: { "content-type": file.type }, body: file });
+      if (!put.ok) { setError("The upload failed. Try again."); return; }
+      setUploading("Checking the file for malware…");
+      await fetch(`/api/agreements/${id}/evidence/${data.id}/confirm`, {
+        method: "POST", headers: { "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() },
+      });
+      setFile(null); setFileNote("");
+      await load();
+    } catch {
+      setError("The upload failed. Check your connection and try again.");
+    } finally {
+      setUploading("");
+    }
+  }
 
   useEffect(() => {
     void load();
@@ -86,6 +128,28 @@ export function RecordPanel({ id }: { id: string }) {
         </li>)}
       </ul>
     </section>
+    {evidence && <section className="card" aria-labelledby="evidence-title">
+      <h2 id="evidence-title">Evidence</h2>
+      <p className="muted">Attach a photo or a PDF to the record. Every file is checked for malware before the other party can see it. The file is stored exactly as uploaded, so a photo may carry the place and time it was taken.</p>
+      {!evidence.legalReady && <p className="notice">Attaching evidence opens after the updated Privacy Policy is approved.</p>}
+      {evidence.canUpload && <form onSubmit={(event) => { event.preventDefault(); void uploadEvidence(); }}>
+        <label htmlFor="evidence-file">File (JPEG, PNG, WebP or PDF, up to 25 MB)</label>
+        <input id="evidence-file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+        <label htmlFor="evidence-note">Note (optional)</label>
+        <input id="evidence-note" maxLength={500} value={fileNote} onChange={(event) => setFileNote(event.target.value)} placeholder="What does this file show?" />
+        <button disabled={!file || !!uploading}>{uploading || "Attach evidence"}</button>
+        {uploading && <p className="muted" aria-live="polite">{uploading}</p>}
+      </form>}
+      <ul className="slots">
+        {evidence.items.length === 0 && <li className="muted">No evidence attached yet.</li>}
+        {evidence.items.map((item) => <li key={item.id}>
+          <strong>{item.filename}</strong> <span className="muted">— {item.uploadedBy}{item.mine ? " (you)" : ""} · {new Date(item.createdAt).toUTCString()}{item.bytes ? ` · ${Math.ceil(item.bytes / 1024)} kB` : ""}</span>
+          {item.note && <div style={{ overflowWrap: "anywhere" }}>{item.note}</div>}
+          <div className={item.status === "INFECTED" || item.status === "FAILED" || item.status === "UNSUPPORTED" ? "error" : "muted"}>{item.statusLabel}</div>
+          {item.downloadable && <p className="actions"><a className="button secondary" href={`/api/agreements/${id}/evidence/${item.id}/file`}>Download file</a>{item.sha256 && <span className="muted">SHA-256 {item.sha256.slice(0, 16)}…</span>}</p>}
+        </li>)}
+      </ul>
+    </section>}
     <section className="card" aria-labelledby="record-title">
       <h2 id="record-title">Messages, notes and timeline</h2>
       {record.canWrite && <form onSubmit={async (event) => {

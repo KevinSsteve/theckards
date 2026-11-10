@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
 import { DeleteMessageCommand, ReceiveMessageCommand, SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
-import type { AgreementSection, SealedReceipt, TemplateId } from "@theckards/domain";
+import { DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { EVIDENCE_TYPES, detectEvidenceType, type AgreementSection, type SealedReceipt, type TemplateId } from "@theckards/domain";
 import type pg from "pg";
 import { decryptText } from "./crypto.js";
 import { pool, transaction } from "./db.js";
@@ -15,6 +16,7 @@ const s3 = new S3Client({});
 const ses = new SESv2Client({});
 const queueUrl = process.env.JOBS_QUEUE_URL!;
 const bucket = process.env.DOCUMENTS_BUCKET!;
+const quarantineBucket = process.env.EVIDENCE_QUARANTINE_BUCKET!;
 const baseUrl = process.env.APP_BASE_URL!;
 const FROM = "Theckards <no-reply@theckards.linkealls.com>";
 const FROM_ADDRESS = "no-reply@theckards.linkealls.com";
@@ -255,6 +257,58 @@ async function sealAddendum(payload: Record<string, unknown>): Promise<void> {
   await s3.send(new PutObjectCommand({ Bucket: bucket, Key: `${prefix}.receipt.json`, Body: JSON.stringify(stored, null, 2), ContentType: "application/json" }));
 }
 
+// ---------- Evidence malware scanning (ADR-020) ----------
+
+/** GuardDuty scan result -> terminal evidence status. Anything that is not a clean result stays invisible. */
+const SCAN_RESULT: Record<string, "INFECTED" | "UNSUPPORTED" | "FAILED"> = {
+  THREATS_FOUND: "INFECTED",
+  UNSUPPORTED: "UNSUPPORTED",
+  ACCESS_DENIED: "FAILED",
+  FAILED: "FAILED",
+};
+
+async function evidenceScanned(payload: Record<string, unknown>): Promise<void> {
+  const key = String(payload.key ?? "");
+  const resultStatus = String(payload.resultStatus ?? "");
+  const row = (await pool.query<{ id: string; agreement_id: string; content_type: string; scan_status: string }>(
+    "SELECT id, agreement_id, content_type, scan_status FROM evidence WHERE quarantine_key = $1", [key],
+  )).rows[0];
+  // No row: GuardDuty's own validation object, or a key we do not track. Nothing to do.
+  if (!row) return;
+  if (!["AWAITING_UPLOAD", "PENDING"].includes(row.scan_status)) return;
+
+  if (resultStatus === "NO_THREATS_FOUND") {
+    const object = await s3.send(new GetObjectCommand({ Bucket: quarantineBucket, Key: key }));
+    const bytes = await object.Body!.transformToByteArray();
+    const actual = detectEvidenceType(bytes);
+    if (actual !== row.content_type) {
+      // The file is not what the uploader declared, so it is never served even though it is clean.
+      await pool.query(
+        "UPDATE evidence SET scan_status = 'UNSUPPORTED', scan_reason = 'DECLARED_TYPE_MISMATCH', scanned_at = now() WHERE id = $1 AND scan_status IN ('AWAITING_UPLOAD', 'PENDING')",
+        [row.id],
+      );
+    } else {
+      const digest = sha256Hex(bytes);
+      const storedKey = `agreements/${row.agreement_id}/evidence/${row.id}${EVIDENCE_TYPES[actual]}`;
+      await s3.send(new PutObjectCommand({
+        Bucket: bucket, Key: storedKey, Body: bytes, ContentType: actual,
+        Metadata: { sha256: digest, evidence: row.id },
+      }));
+      await pool.query(`
+        UPDATE evidence SET scan_status = 'CLEAN', stored_key = $2, sha256 = $3, stored_bytes = $4, scanned_at = now()
+        WHERE id = $1 AND scan_status IN ('AWAITING_UPLOAD', 'PENDING')
+      `, [row.id, storedKey, digest, bytes.length]);
+    }
+  } else {
+    await pool.query(
+      "UPDATE evidence SET scan_status = $2, scan_reason = $3, scanned_at = now() WHERE id = $1 AND scan_status IN ('AWAITING_UPLOAD', 'PENDING')",
+      [row.id, SCAN_RESULT[resultStatus] ?? "FAILED", String(payload.scanStatus ?? resultStatus).slice(0, 100)],
+    );
+  }
+  // The quarantine copy is never needed again, whatever the result.
+  await s3.send(new DeleteObjectCommand({ Bucket: quarantineBucket, Key: key }));
+}
+
 export interface QueueEnvelope {
   id: string;
   topic: string;
@@ -353,6 +407,7 @@ export async function processEnvelope(envelope: QueueEnvelope): Promise<void> {
     case "email.revision_requested": await notifyRevision(envelope.payload); break;
     case "addendum.render": await renderAddendumPreview(envelope.payload); break;
     case "seal.addendum": await sealAddendum(envelope.payload); break;
+    case "evidence.scanned": await evidenceScanned(envelope.payload); break;
     default: throw new Error("Unsupported job topic");
   }
   await pool.query("INSERT INTO processed_jobs(job_id, topic) VALUES ($1, $2) ON CONFLICT (job_id) DO NOTHING", [envelope.id, envelope.topic]);

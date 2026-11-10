@@ -128,6 +128,29 @@ describe("account link route contract", () => {
   });
 });
 
+describe("evidence route contract", () => {
+  it("keeps every evidence route behind a party session with a rate limit", async () => {
+    const root = path.resolve(process.cwd(), "src/app/api/agreements/[id]/evidence");
+    const files = await routeFiles(root);
+    expect(files.length).toBe(3);
+    for (const file of files) {
+      const source = await readFile(file, "utf8");
+      expect(source, file).toMatch(/auth:\s*"user"/);
+      expect(source, file).toContain("rateLimit:");
+    }
+  });
+
+  it("never serves evidence inline and never trusts the stored content type", async () => {
+    const download = await readFile(path.resolve(process.cwd(), "src/app/api/agreements/[id]/evidence/[evidenceId]/file/route.ts"), "utf8");
+    expect(download).toContain("attachment;");
+    expect(download).toContain("default-src 'none'; sandbox");
+    expect(download).toContain("nosniff");
+    const worker = await readFile(path.resolve(process.cwd(), "../../apps/worker/src/jobs.ts"), "utf8");
+    expect(worker).toContain("detectEvidenceType(bytes)");
+    expect(worker).toContain("DECLARED_TYPE_MISMATCH");
+  });
+});
+
 describe("public verification route contract", () => {
   it("is public, rate-limited, briefly cached and receives only a hash", async () => {
     const route = await readFile(path.resolve(process.cwd(), "src/app/api/public/verify/[sha256]/route.ts"), "utf8");
