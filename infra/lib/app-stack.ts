@@ -252,7 +252,8 @@ export class AppStack extends cdk.Stack {
     const webLogs = new logs.LogGroup(this, "WebLogs", { logGroupName: `/theckards/${envName}/web`, retention: logs.RetentionDays.THREE_MONTHS, removalPolicy: cdk.RemovalPolicy.RETAIN });
     webTask.addContainer("web", {
       image: ecs.ContainerImage.fromEcrRepository(base.webRepo, props.imageTag),
-      environment: commonEnv, secrets: dbSecrets,
+      // ECS overrides HOSTNAME with the task hostname; Next.js must bind all interfaces for the localhost health check.
+      environment: { ...commonEnv, HOSTNAME: "0.0.0.0", PORT: "3000" }, secrets: dbSecrets,
       portMappings: [{ containerPort: 3000 }], stopTimeout: cdk.Duration.seconds(30),
       readonlyRootFilesystem: false,
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: "web", logGroup: webLogs }),
