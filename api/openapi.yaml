@@ -109,7 +109,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/AgreementId'
       responses:
-        '200': { description: Invitation URL, expiry and QR SVG }
+        '200': { description: "Invitation URL, expiry and QR SVG" }
         '404': { $ref: '#/components/responses/Problem' }
   /api/agreements/{id}/cancel:
     post:
