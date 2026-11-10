@@ -57,6 +57,21 @@ async function emailDeliveryEnabled(client: pg.PoolClient): Promise<boolean> {
   return result.rows[0]?.enabled === "true";
 }
 
+/**
+ * Sealed bytes are immutable. If this seal already exists, never re-render or overwrite the stored PDF: a later
+ * change to the renderer would otherwise replace the file with bytes that no longer match its signed receipt.
+ * Only the receipt sidecar is rewritten, from the authoritative row, so an interrupted run still converges.
+ */
+async function alreadySealed(sealId: string, prefix: string): Promise<boolean> {
+  const existing = await pool.query<{ receipt: SealedReceipt }>("SELECT receipt FROM sealed_documents WHERE id = $1", [sealId]);
+  const row = existing.rows[0];
+  if (!row) return false;
+  await s3.send(new PutObjectCommand({
+    Bucket: bucket, Key: `${prefix}.receipt.json`, Body: JSON.stringify(row.receipt, null, 2), ContentType: "application/json",
+  }));
+  return true;
+}
+
 async function sealFinal(payload: Record<string, unknown>): Promise<void> {
   const agreementId = String(payload.agreementId ?? "");
   const versionId = String(payload.versionId ?? "");
@@ -82,6 +97,8 @@ async function sealFinal(payload: Record<string, unknown>): Promise<void> {
   if (!signatures.rows.every((row) => row.document_sha256 === agreement.document_sha256)) throw new Error("Signatures do not match the document hash");
 
   const sealId = sealIdFor(agreementId, versionId, "FINAL");
+  const prefix = `agreements/${agreementId}/v${agreement.number}/final-${sealId}`;
+  if (await alreadySealed(sealId, prefix)) return;
   const sealedAt = new Date(Math.max(...signatures.rows.map((row) => row.signed_at.getTime())));
   const signers: FinalSigner[] = signatures.rows.map((row) => ({
     role: row.role === "CREATOR" ? "Creator" : "Counterparty", typedName: row.typed_name, signedAt: row.signed_at, method: row.method,
@@ -92,7 +109,6 @@ async function sealFinal(payload: Record<string, unknown>): Promise<void> {
       verifyUrl: `${baseUrl}/verify?seal=${sealId}`, watermark: true },
   );
   const fileSha256 = sha256Hex(bytes);
-  const prefix = `agreements/${agreementId}/v${agreement.number}/final-${sealId}`;
   await s3.send(new PutObjectCommand({ Bucket: bucket, Key: `${prefix}.pdf`, Body: bytes, ContentType: "application/pdf", Metadata: { sha256: fileSha256, seal: sealId } }));
 
   const { receipt, signature, keyId } = await signReceipt(
@@ -207,6 +223,8 @@ async function sealAddendum(payload: Record<string, unknown>): Promise<void> {
   if (!roles.has("CREATOR") || !roles.has("COUNTERPARTY")) throw new Error("Both parties must sign the addendum");
   if (!signatures.rows.every((s) => s.document_sha256 === row.document_sha256)) throw new Error("Addendum signatures do not match the document hash");
   const sealId = sealIdFor(row.agreement_id, row.id, "ADDENDUM");
+  const prefix = `agreements/${row.agreement_id}/addenda/${row.id}/sealed-${sealId}`;
+  if (await alreadySealed(sealId, prefix)) return;
   const sealedAt = new Date(Math.max(...signatures.rows.map((s) => s.signed_at.getTime())));
   const signers: FinalSigner[] = signatures.rows.map((s) => ({
     role: s.role === "CREATOR" ? "Creator" : "Counterparty", typedName: s.typed_name, signedAt: s.signed_at, method: "ACCOUNT_SESSION",
@@ -216,7 +234,6 @@ async function sealAddendum(payload: Record<string, unknown>): Promise<void> {
     { sealId, sealedAt, contentSha256: row.content_sha256, signedDocumentSha256: row.document_sha256, signers, verifyUrl: `${baseUrl}/verify?seal=${sealId}`, watermark: true },
   );
   const fileSha256 = sha256Hex(bytes);
-  const prefix = `agreements/${row.agreement_id}/addenda/${row.id}/sealed-${sealId}`;
   await s3.send(new PutObjectCommand({ Bucket: bucket, Key: `${prefix}.pdf`, Body: bytes, ContentType: "application/pdf", Metadata: { sha256: fileSha256, seal: sealId } }));
   const { receipt, signature, keyId } = await signReceipt(
     { id: sealId, kind: "ADDENDUM", sha256: fileSha256, content_sha256: row.content_sha256, sealed_at: sealedAt.toISOString() },

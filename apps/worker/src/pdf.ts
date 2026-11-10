@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import fontkit from "@pdf-lib/fontkit";
-import { renderAgreement, type AgreementSection, type TemplateId } from "@theckards/domain";
+import { renderAgreement, sealMark, type AgreementSection, type TemplateId } from "@theckards/domain";
 import { PDFDocument, PDFFont, PDFPage, degrees, rgb } from "pdf-lib";
 import QRCode from "qrcode";
 
@@ -140,6 +140,19 @@ export async function renderAgreementPdf(input: {
   page.drawImage(qrImage, { x: margin, y: y - 110, width: 110, height: 110 });
   page.drawText("Verify this record:", { x: margin + 125, y: y - 40, size: 10, font });
   page.drawText(final.verifyUrl, { x: margin + 125, y: y - 56, size: 8, font, color: muted });
+
+  // The seal impression: pressed from the seal id alone, so the same seal always shows the same mark.
+  const mark = sealMark(final.sealId);
+  const wax = rgb(0.48, 0.12, 0.12);
+  const markLeft = width - margin - mark.size;
+  const markTop = y - 4;
+  const cx = markLeft + mark.center;
+  const cy = markTop - mark.center;
+  page.drawCircle({ x: cx, y: cy, size: mark.outerRing, color: rgb(0.98, 0.94, 0.93), borderColor: wax, borderWidth: 1.6 });
+  page.drawCircle({ x: cx, y: cy, size: mark.innerRing, borderColor: wax, borderWidth: 0.7 });
+  page.drawSvgPath(mark.impression, { x: markLeft, y: markTop, color: wax, borderColor: wax, borderWidth: 0.6 });
+  const caption = `SEAL ${mark.code}`;
+  page.drawText(caption, { x: cx - font.widthOfTextAtSize(caption, 7) / 2, y: cy - mark.center - 6, size: 7, font, color: muted });
 
   if (final.watermark) {
     for (const each of pdf.getPages()) {

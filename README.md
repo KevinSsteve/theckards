@@ -4,6 +4,28 @@ A trust layer for agreements between people who have already decided to deal wit
 
 Production: https://theckards.linkealls.com (AWS, us-east-1).
 
+## Resurrection: the wax seal and the signet ring
+
+Submitted to **Kiroween 2026** in the *Resurrection* category. For centuries a wax seal and a signet ring were how
+people closed an agreement in person, and they worked for three reasons: breaking the wax showed tampering, only
+the holder of the signet could press the mark, and anyone could recognise it. Then the practice died, and what
+replaced it asks two people standing next to each other to trust an emailed link.
+
+Theckards brings the ceremony back and keeps all three properties, with modern cryptography doing the work the wax
+used to do:
+
+| Wax seal and signet | Theckards |
+| --- | --- |
+| Breaking the wax reveals tampering | Changing a single byte makes verification fail (SHA-256) |
+| Only the signet holder can press the mark | A private key that never leaves AWS KMS (ECDSA P-256) |
+| Anyone could recognise the mark | A published public key and a seal impression printed on the document |
+| Sealed in person, in front of witnesses | In-person signing: a single-use QR code and a code exchanged between the two devices |
+
+Every sealed document carries a **seal impression** pressed from its own identifier, so each document has a
+distinct mark instead of one signet for one person. The same impression is shown on `/verify`, for a reader to
+compare against the printed one. The geometry is a pure function:
+[`packages/domain/src/seal-mark.ts`](packages/domain/src/seal-mark.ts).
+
 **Built with [Kiro](https://kiro.dev).** How the specs and steering documents in [`/.kiro`](.kiro) shaped this
 project, and where they changed the result, is written up in [`docs/kiro-usage.md`](docs/kiro-usage.md). That page
 also explains how to test the app, including public verification with no account.

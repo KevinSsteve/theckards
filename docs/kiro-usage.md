@@ -5,6 +5,15 @@ records which Kiro features were used and, more importantly, where they changed 
 
 Everything judges need to verify this is in [`/.kiro`](../.kiro): 11 specs and 3 steering documents.
 
+## Category: Resurrection
+
+The obsolete technology being revived is the **wax seal and signet ring**. The mapping from its three properties
+to cryptography is in the [README](../README.md); the part worth noting here is that the resurrection is not
+decorative. The seal impression is a pure, tested function of the seal identifier
+([`packages/domain/src/seal-mark.ts`](../packages/domain/src/seal-mark.ts)) shared by two very different
+renderers: the PDF worker draws it with `pdf-lib`, and the verification page draws the same geometry as SVG, so
+the mark on paper and the mark on screen cannot drift apart.
+
 ## Kiro features used
 
 | Feature | How it was used |
