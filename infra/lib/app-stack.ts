@@ -208,9 +208,17 @@ export class AppStack extends cdk.Stack {
       encryption: s3.BucketEncryption.S3_MANAGED, blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL, enforceSSL: true,
       lifecycleRules: [{ expiration: cdk.Duration.days(30) }], removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
-    // Forwarding of selected addresses (cdk.json context "mailForwards": { localPart: externalAddress }).
+    // Forwarding of selected addresses (cdk.json "mailForwardLocals"). The external target is personal data and is
+    // kept out of git: it comes from the deploy environment (THECKARDS_MAIL_FORWARD_TO, sourced from the SSM
+    // parameter /theckards/<env>/mail-forward-to) or -c mailForwardTo=... Synth fails if missing, so forwarding is
+    // never removed by accident.
+    const forwardTo = (this.node.tryGetContext("mailForwardTo") as string | undefined) ?? process.env.THECKARDS_MAIL_FORWARD_TO;
+    if (!forwardTo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forwardTo)) {
+      throw new Error("Set THECKARDS_MAIL_FORWARD_TO (from SSM /theckards/" + envName + "/mail-forward-to) before synth or deploy.");
+    }
     const forwardMap: Record<string, string> = {};
-    for (const [local, target] of Object.entries((this.node.tryGetContext("mailForwards") ?? {}) as Record<string, string>)) {
+    for (const local of (this.node.tryGetContext("mailForwardLocals") ?? []) as string[]) {
+      const target = forwardTo;
       forwardMap[`${local}@${domain}`.toLowerCase()] = target;
     }
     const forwarder = new lambda.Function(this, "MailForwarder", {

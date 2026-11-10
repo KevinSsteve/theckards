@@ -6,17 +6,17 @@
     "rootZoneId": "Z014291339V6CZQXYQ124",
     "subdomain": "theckards",
     "useAppDbCredentials": "true",
-    "mailForwards": {
-      "kevin": "owner-forward-target@example.invalid",
-      "support": "owner-forward-target@example.invalid",
-      "privacy": "owner-forward-target@example.invalid",
-      "legal": "owner-forward-target@example.invalid",
-      "abuse": "owner-forward-target@example.invalid"
-    },
     "envName": "prod",
     "@aws-cdk/aws-iam:minimizePolicies": true,
     "@aws-cdk/core:checkSecretUsage": true,
     "@aws-cdk/core:defaultCrossStackReferences": "strong",
-    "@aws-cdk/aws-ec2:ipv4IgnoreEgressRule": true
+    "@aws-cdk/aws-ec2:ipv4IgnoreEgressRule": true,
+    "mailForwardLocals": [
+      "kevin",
+      "support",
+      "privacy",
+      "legal",
+      "abuse"
+    ]
   }
 }
