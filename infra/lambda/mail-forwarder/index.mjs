@@ -51,9 +51,16 @@ export const handler = async (event) => {
     if (raw.length > MAX_BYTES) { console.log(JSON.stringify({ msg: "dropped", reason: "too-large", messageId: mail.messageId })); continue; }
     const message = rewrite(raw);
     if (!message) { console.log(JSON.stringify({ msg: "skipped", reason: "loop-or-malformed", messageId: mail.messageId })); continue; }
-    await ses.send(new SendEmailCommand({
-      FromEmailAddress: FROM, Destination: { ToAddresses: targets }, ConfigurationSetName: CONFIG_SET, Content: { Raw: { Data: message } },
-    }));
+    try {
+      await ses.send(new SendEmailCommand({
+        FromEmailAddress: FROM, Destination: { ToAddresses: targets }, ConfigurationSetName: CONFIG_SET, Content: { Raw: { Data: message } },
+      }));
+    } catch (error) {
+      // SES errors can contain recipient addresses; log and rethrow without personal data (Lambda retries async events).
+      const detail = String(error?.message ?? "").replace(/[^\s@<>"':,]+@[^\s@<>"':,]+/g, "[email]").slice(0, 200);
+      console.log(JSON.stringify({ msg: "forward failed", messageId: mail.messageId, error: error?.name ?? "Error", detail }));
+      throw new Error(`Forward failed: ${error?.name ?? "Error"}`);
+    }
     console.log(JSON.stringify({ msg: "forwarded", messageId: mail.messageId, targets: targets.length }));
   }
 };
