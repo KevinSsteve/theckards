@@ -4,6 +4,10 @@ A trust layer for agreements between people who have already decided to deal wit
 
 Production: https://theckards.linkealls.com (AWS, us-east-1).
 
+**Built with [Kiro](https://kiro.dev).** How the specs and steering documents in [`/.kiro`](.kiro) shaped this
+project, and where they changed the result, is written up in [`docs/kiro-usage.md`](docs/kiro-usage.md). That page
+also explains how to test the app, including public verification with no account.
+
 Theckards **never** handles money between the parties, gives legal advice, decides disputes or rates people. The full guardrail list (G1–G11) is in [`.kiro/steering/product.md`](.kiro/steering/product.md).
 
 ## Repository layout
@@ -11,6 +15,7 @@ Theckards **never** handles money between the parties, gives legal advice, decid
 | Path | Contents |
 | --- | --- |
 | `.kiro/specs/` | Feature specs S1–S11 (requirements, design, tasks) written with Kiro |
+| `docs/kiro-usage.md` | How Kiro was used, and how to test the app |
 | `.kiro/steering/` | Product guardrails, tech stack and production rules applied to all work |
 | `apps/web` | Next.js app (UI and BFF API), Cognito sessions, signing, record, cases |
 | `apps/worker` | Queue worker: deterministic PDFs, KMS-signed seals, addenda, migrations |

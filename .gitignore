@@ -5,6 +5,3 @@ cdk.out
 *.log
 .env*
 *.tsbuildinfo
-# Local Kiro session data (screenshots, logs, sandbox permissions). Specs and steering are versioned.
-.kiro/artifacts/
-.kiro/settings/
