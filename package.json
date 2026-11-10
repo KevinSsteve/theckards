@@ -1,0 +1,19 @@
+{
+  "name": "theckards",
+  "private": true,
+  "packageManager": "pnpm@12.18.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^2.1.0"
+  }
+}

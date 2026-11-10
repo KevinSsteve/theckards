@@ -1,0 +1,7 @@
+# S6 — Design
+
+- **/verify (client)**: `crypto.subtle.digest('SHA-256')` em streaming para ficheiros grandes (leitura em chunks → fallback hash-wasm se necessário); chama o endpoint; mostra resultado com copy permitido (G3). Sem upload do ficheiro.
+- **Endpoint**: lookup por `sealed_documents.sha256` (índice UNIQUE). Resposta `{valid, kind, sealed_at, seal_id, anchored}`. Cache-Control `public, max-age=60`. WAF rate limit por IP.
+- **Dossiê**: outbox `dossier.build` → worker faz streaming de ZIP (archiver) para S3 multipart; ordem e timestamps do ZIP fixos para reprodutibilidade; `manifest.json` lista caminho + SHA-256; README com passos (`sha256sum`, verificação de assinatura com chave pública do `.well-known`). Depois sela o ZIP (`kind=DOSSIER`). Link: URL pré-assinado 24 h gerado a pedido. Estado do pedido em tabela `dossier_requests` (PENDING/READY/FAILED) para polling.
+- **Âncora (T6.4)**: job EventBridge diário; Merkle (RFC 6962 style, folhas = sha256 dos selos ordenados); `anchors` row; transação via KMS `ECC_SECG_P256K1` (signer custom viem/ethers) a RPC configurável no Admin (Secrets Manager). Idempotente por `day`. Provas de inclusão gravadas em `sealed_documents.anchor_id` + JSON de prova no recibo. Alarme se saldo de gas baixo. Entrega só ligada pelo Admin após checklist (testnet→mainnet).
+- **Testes**: PDF com 1 byte alterado → inválido; dossiê verificado por script independente em CI.

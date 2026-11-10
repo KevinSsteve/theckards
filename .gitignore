@@ -1,0 +1,6 @@
+node_modules
+dist
+cdk.out
+.next
+*.log
+.env*

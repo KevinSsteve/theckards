@@ -1,0 +1,11 @@
+# Stack
+- TypeScript estrito; Next.js full-stack (serviço `web`); worker Node.js; pnpm monorepo.
+- PostgreSQL gerido: **RDS PostgreSQL single-AZ** (ADR-002); S3; SQS+DLQ; EventBridge Scheduler; SES; Cognito (Essentials); KMS; Secrets Manager; AppConfig; Stripe.
+- Antes de escolher cada serviço AWS, escrever um ADR em `docs/adr/`: requisito, custo fixo mensal, alternativa mais simples, risco operacional. Cada passo acima do mínimo (2.ª tarefa, Multi-AZ, reader, 2.ª NAT, cópia cross-region) exige ADR.
+- IA: Amazon Bedrock (Converse, tool-use forçado `fill_fields`, saída validada com zod). Modelo vem de config (`AI_MODEL_ID`), nunca fixo no código.
+- AWS CDK TypeScript + cdk-nag; GitHub Actions com OIDC; imagens promovidas por digest.
+- Escritas idempotentes (`Idempotency-Key`) e outbox. Documentos, provas, mensagens, assinaturas, confirmações e notas são só de inserção para a aplicação.
+- Sem S3 Object Lock por defeito. IP e user agent são dados pessoais.
+- Nunca registar dados pessoais, tokens ou segredos em logs. Segredos só no Secrets Manager.
+- Config de runtime: tabela `app_settings` + AppConfig (flags), geridas pelo Admin dashboard (S11).
+- Onde o guião diz VERIFICAR, ler a documentação oficial atual antes de codificar (pdf lib, Bedrock model IDs/região, GuardDuty Malware Protection for S3, taxas Stripe, Cognito, SES).
