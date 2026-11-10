@@ -184,3 +184,38 @@ describe("redirect contract", () => {
     }
   });
 });
+
+/**
+ * The second half of the production build gate.
+ *
+ * `production.md` requires an IDOR test for every new route, and the image build runs `pnpm test`, so this is
+ * where that rule is enforced. Rather than naming routes, which drift, it keys off the one thing every
+ * party-scoped feature has in common: it authorizes through `member()`. A module that decides access that way
+ * must come with a test that proves an outsider is refused.
+ */
+describe("IDOR coverage contract", () => {
+  it("every module that authorizes by party has a test proving an outsider is refused", async () => {
+    const serverRoot = path.resolve(process.cwd(), "src/server");
+    const entries = await readdir(serverRoot, { withFileTypes: true });
+    const modules = entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts"))
+      .map((entry) => entry.name);
+
+    const partyScoped: string[] = [];
+    for (const name of modules) {
+      const source = await readFile(path.join(serverRoot, name), "utf8");
+      if (/\bmember\(/.test(source)) partyScoped.push(name);
+    }
+    // If this drops to nothing, the detection broke rather than the codebase becoming safe.
+    expect(partyScoped.length).toBeGreaterThanOrEqual(4);
+
+    for (const name of partyScoped) {
+      const testName = name.replace(/\.ts$/, ".test.ts");
+      const source = await readFile(path.join(serverRoot, testName), "utf8").catch(() => "");
+      expect(source, `${name} authorizes by party, so ${testName} must exist`).not.toBe("");
+      expect(source.toUpperCase(), `${testName} must name the risk it covers`).toContain("IDOR");
+      expect(source, `${testName} must assert an outsider is refused`).toMatch(/status:\s*404/);
+      expect(source, `${testName} must exercise a caller who is not a party`).toMatch(/outsider/i);
+    }
+  });
+});
