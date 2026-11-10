@@ -43,3 +43,6 @@ pre.audit { max-height: 420px; overflow: auto; white-space: pre-wrap; }
 .slots, .timeline { list-style: none; margin: 0; padding: 0; }
 .slots li, .timeline li { border-top: 1px solid var(--line); padding: .75rem 0; }
 .slots li:first-child, .timeline li:first-child { border-top: 0; }
+.notice dl { display: grid; grid-template-columns: auto 1fr; gap: .25rem 1rem; margin: 0; }
+.notice dt { color: var(--muted); font-weight: 650; }
+.notice dd { margin: 0; }

@@ -92,7 +92,7 @@ export function VerifyRecord({ expectedSeal }: { expectedSeal: string | null }) 
         <dt>Blockchain anchor</dt><dd>{result.anchored ? "Anchored" : "Not anchored"}</dd>
       </dl>
       </div>
-      <p className="muted">This impression is pressed from the seal identifier alone. It must match the one printed on the sealed PDF.</p>
+      <p className="muted">Pressed from the seal identifier alone. Compare it with the mark printed beside the QR code on your sealed PDF. <a href="/verify/how#impression">Records sealed before impressions existed carry no printed mark.</a></p>
       <p className="muted">SHA-256: <code>{digest}</code></p>
     </div>}
     {result && !sealMatches && <div className="notice" role="status">
