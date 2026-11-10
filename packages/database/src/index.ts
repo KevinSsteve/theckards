@@ -71,6 +71,7 @@ export async function runMigrations(
     await client.query("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO theckards_app");
     await client.query("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO theckards_app");
     await client.query("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO theckards_app");
+    await client.query("REVOKE ALL ON schema_migrations FROM theckards_app");
     await client.query("REVOKE UPDATE, DELETE ON user_consents, app_settings_history, audit_logs FROM theckards_app");
     return applied;
   } finally {
