@@ -49,7 +49,8 @@ export function beginAuthorization(intent: AuthIntent): { url: string; transacti
   url.searchParams.set("client_id", env().USER_POOL_CLIENT_ID);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("redirect_uri", `${env().APP_BASE_URL}/api/auth/callback`);
-  url.searchParams.set("scope", "openid email profile");
+  // aws.cognito.signin.user.admin is required for AssociateSoftwareToken/VerifySoftwareToken (admin TOTP enrolment).
+  url.searchParams.set("scope", "openid email profile aws.cognito.signin.user.admin");
   url.searchParams.set("state", transaction.state);
   url.searchParams.set("nonce", transaction.nonce);
   url.searchParams.set("code_challenge", challenge);

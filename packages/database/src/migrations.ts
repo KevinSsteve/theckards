@@ -406,4 +406,14 @@ CREATE TRIGGER sealed_documents_append_only BEFORE UPDATE OR DELETE ON sealed_do
 FOR EACH ROW EXECUTE FUNCTION prevent_append_only_change();
 `,
   },
+  {
+    id: "0005",
+    name: "qr_link_invitations",
+    sql: `
+ALTER TABLE parties ADD COLUMN IF NOT EXISTS invite_channel text NOT NULL DEFAULT 'EMAIL';
+ALTER TABLE parties ADD COLUMN IF NOT EXISTS invite_token_ciphertext bytea;
+ALTER TABLE parties DROP CONSTRAINT IF EXISTS parties_invite_channel_check;
+ALTER TABLE parties ADD CONSTRAINT parties_invite_channel_check CHECK (invite_channel IN ('EMAIL', 'LINK'));
+`,
+  },
 ] as const;

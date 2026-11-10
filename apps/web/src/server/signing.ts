@@ -130,8 +130,9 @@ export interface InviteContext {
   partyId: string;
   agreementId: string;
   displayName: string;
-  emailHash: string;
+  emailHash: string | null;
   consumed: boolean;
+  channel: "EMAIL" | "LINK";
   expiresAt: Date | null;
   state: AgreementState;
   title: string;
@@ -147,11 +148,11 @@ export interface InviteContext {
 export async function loadInvite(token: string): Promise<InviteContext | null> {
   if (!/^[A-Za-z0-9_-]{20,128}$/.test(token)) return null;
   const result = await getPool().query<{
-    party_id: string; agreement_id: string; display_name: string; email_hash: string; invite_consumed_at: Date | null;
+    party_id: string; agreement_id: string; display_name: string; email_hash: string | null; invite_consumed_at: Date | null; invite_channel: "EMAIL" | "LINK";
     invite_expires_at: Date | null; state: AgreementState; title: string; template_id: TemplateId; number: number;
     render_status: string; fields: Record<string, unknown>; creator_name: string | null; cp_signed_at: Date | null; seal_id: string | null;
   }>(`
-    SELECT p.id AS party_id, p.agreement_id, p.display_name, p.email_hash, p.invite_consumed_at, p.invite_expires_at,
+    SELECT p.id AS party_id, p.agreement_id, p.display_name, p.email_hash, p.invite_consumed_at, p.invite_channel, p.invite_expires_at,
       a.state, a.title, a.template_id, v.number, v.render_status, v.fields,
       (SELECT s.typed_name FROM signatures s JOIN parties cp ON cp.id = s.party_id AND cp.role = 'CREATOR' WHERE s.version_id = v.id) AS creator_name,
       (SELECT s.signed_at FROM signatures s WHERE s.version_id = v.id AND s.party_id = p.id) AS cp_signed_at,
@@ -165,7 +166,7 @@ export async function loadInvite(token: string): Promise<InviteContext | null> {
   if (!row) return null;
   return {
     partyId: row.party_id, agreementId: row.agreement_id, displayName: row.display_name, emailHash: row.email_hash,
-    consumed: row.invite_consumed_at !== null, expiresAt: row.invite_expires_at, state: row.state, title: row.title,
+    consumed: row.invite_consumed_at !== null, channel: row.invite_channel, expiresAt: row.invite_expires_at, state: row.state, title: row.title,
     templateId: row.template_id, versionNumber: row.number, renderStatus: row.render_status,
     sections: renderAgreement(row.template_id, row.fields), creatorSignedName: row.creator_name,
     counterpartySignedAt: row.cp_signed_at, finalSealId: row.seal_id,
@@ -179,10 +180,30 @@ function requireUsableInvite(invite: InviteContext | null): InviteContext {
   return invite;
 }
 
-export async function requestGuestCode(token: string, ip: string): Promise<{ expiresAt: string }> {
+/**
+ * Emails a code to the invited party. For QR/link invitations without an email, the scanner supplies their own
+ * address here; it can be corrected until the invitation is consumed, and it may not be the creator's address (F1).
+ */
+export async function requestGuestCode(token: string, ip: string, email?: string): Promise<{ expiresAt: string }> {
   await approvedEsignId();
   const invite = requireUsableInvite(await loadInvite(token));
-  return issueOtp({ scope: signScope(invite.agreementId, invite.partyId), emailHash: invite.emailHash, ip, recipient: { kind: "party", partyId: invite.partyId } });
+  let emailHash = invite.emailHash;
+  const channel = await getPool().query<{ invite_channel: string; creator_hash: string }>(`
+    SELECT p.invite_channel, u.email_hash AS creator_hash FROM parties p
+    JOIN agreements a ON a.id = p.agreement_id JOIN users u ON u.id = a.creator_id WHERE p.id = $1
+  `, [invite.partyId]);
+  if (channel.rows[0]?.invite_channel === "LINK") {
+    if (!email) throw new ProblemError(422, "Email required", "Enter the email address where you want to receive the verification code.");
+    const normalized = email.trim().toLowerCase();
+    emailHash = hmac(normalized, "email");
+    if (emailHash === channel.rows[0].creator_hash) throw new ProblemError(422, "Invalid email", "Use your own email address, not the agreement creator's.");
+    await getPool().query(
+      "UPDATE parties SET email_ciphertext = $2, email_hash = $3 WHERE id = $1 AND invite_consumed_at IS NULL",
+      [invite.partyId, await encryptText(normalized, "guest-email"), emailHash],
+    );
+  }
+  if (!emailHash) throw new ProblemError(409, "Email missing", "This invitation has no email address.");
+  return issueOtp({ scope: signScope(invite.agreementId, invite.partyId), emailHash, ip, recipient: { kind: "party", partyId: invite.partyId } });
 }
 
 type GuestAction = { action: "sign"; typedName: string } | { action: "request_changes" };
@@ -192,6 +213,7 @@ export async function completeGuestAction(input: { token: string; code: string; 
 }> {
   const legal = await approvedEsignId();
   const invite = requireUsableInvite(await loadInvite(input.token));
+  if (!invite.emailHash) throw new ProblemError(422, "Invalid code", "Request a verification code first.");
   const otpVerifiedAt = await verifyOtp(signScope(invite.agreementId, invite.partyId), invite.emailHash, input.code);
   const evidence = await encryptEvidence(input.evidence);
   return inTransaction(async (client) => {

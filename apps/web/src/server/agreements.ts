@@ -1,7 +1,8 @@
 import { canonicalJson, renderAgreement, transition, validateTemplateFields, type AgreementState, type TemplateId } from "@theckards/domain";
 import type pg from "pg";
-import { encryptText, hmac, randomToken, sha256 } from "./crypto";
+import { decryptText, encryptText, hmac, randomToken, sha256 } from "./crypto";
 import { getPool, inTransaction } from "./db";
+import { env } from "./env";
 import { ProblemError } from "./http/problem";
 import { userHasCurrentConsents } from "./legal";
 
@@ -211,12 +212,20 @@ export async function updateAgreement(input: {
   return getAgreement(input.userId, input.agreementId);
 }
 
+/**
+ * Invites the counterparty. With an email the link is sent by email; without one (in-person / QR) the
+ * counterparty enters their own email on the signing page. Either way the creator can show the link as a QR code.
+ */
 export async function inviteCounterparty(input: {
-  userId: string; agreementId: string; expectedLockVersion: number; email: string; displayName: string;
+  userId: string; agreementId: string; expectedLockVersion: number; email?: string; displayName: string;
 }): Promise<{ agreement: AgreementRecord; inviteExpiresAt: string }> {
   await requireLegal(input.userId);
-  const email = input.email.trim().toLowerCase();
-  const emailCiphertext = await encryptText(email, "guest-email");
+  const email = input.email?.trim().toLowerCase() || null;
+  if (email) {
+    const creator = await getPool().query<{ email_hash: string }>("SELECT email_hash FROM users WHERE id = $1", [input.userId]);
+    if (creator.rows[0]?.email_hash === hmac(email, "email")) throw new ProblemError(422, "Invalid counterparty", "The counterparty must use a different email address.");
+  }
+  const emailCiphertext = email ? await encryptText(email, "guest-email") : null;
   const token = randomToken();
   const encryptedToken = await encryptText(token, "invite-token");
   const authSetting = await getPool().query<{ days: string }>("SELECT value->>'inviteValidityDays' AS days FROM app_settings WHERE key = 'auth'");
@@ -232,16 +241,21 @@ export async function inviteCounterparty(input: {
     );
     if (version.rows[0]?.render_status !== "READY") throw new ProblemError(409, "Preview pending", "Wait for the preview before inviting the counterparty.");
     const party = await client.query<{ id: string }>(`
-      INSERT INTO parties(agreement_id, role, display_name, email_ciphertext, email_hash, invite_token_hash, invite_expires_at, invited_at)
-      VALUES ($1, 'COUNTERPARTY', $2, $3, $4, $5, $6, now())
+      INSERT INTO parties(agreement_id, role, display_name, email_ciphertext, email_hash, invite_token_hash, invite_token_ciphertext,
+        invite_channel, invite_expires_at, invited_at)
+      VALUES ($1, 'COUNTERPARTY', $2, $3, $4, $5, $6, $7, $8, now())
       ON CONFLICT (agreement_id, role) DO UPDATE SET display_name = EXCLUDED.display_name,
         email_ciphertext = EXCLUDED.email_ciphertext, email_hash = EXCLUDED.email_hash,
-        invite_token_hash = EXCLUDED.invite_token_hash, invite_expires_at = EXCLUDED.invite_expires_at, invited_at = now(),
+        invite_token_hash = EXCLUDED.invite_token_hash, invite_token_ciphertext = EXCLUDED.invite_token_ciphertext,
+        invite_channel = EXCLUDED.invite_channel, invite_expires_at = EXCLUDED.invite_expires_at, invited_at = now(),
         invite_consumed_at = NULL
       RETURNING id
-    `, [input.agreementId, input.displayName, emailCiphertext, hmac(email, "email"), hmac(token, "auth"), inviteExpiresAt]);
+    `, [input.agreementId, input.displayName, emailCiphertext, email ? hmac(email, "email") : null, hmac(token, "auth"),
+        encryptedToken, email ? "EMAIL" : "LINK", inviteExpiresAt]);
     await client.query("UPDATE agreements SET state = $2, lock_version = lock_version + 1, updated_at = now() WHERE id = $1", [input.agreementId, transition(current.state, "PENDING_SIGNATURES")]);
-    await client.query("INSERT INTO outbox(topic, payload) VALUES ('email.invite', $1::jsonb)", [JSON.stringify({ agreementId: input.agreementId, partyId: party.rows[0]!.id, tokenCiphertext: encryptedToken.toString("base64") })]);
+    if (email) {
+      await client.query("INSERT INTO outbox(topic, payload) VALUES ('email.invite', $1::jsonb)", [JSON.stringify({ agreementId: input.agreementId, partyId: party.rows[0]!.id, tokenCiphertext: encryptedToken.toString("base64") })]);
+    }
   });
   return { agreement: await getAgreement(input.userId, input.agreementId), inviteExpiresAt: inviteExpiresAt.toISOString() };
 }
@@ -277,4 +291,20 @@ export async function previewObject(userId: string, agreementId: string): Promis
   const row = result.rows[0];
   if (!row) throw new ProblemError(409, "Preview pending", "The preview is not ready yet.");
   return { key: row.document_s3_key, sha256: row.document_sha256 };
+}
+
+/** Returns the live invitation link for the creator to show as a QR code or copy. Only while it is usable. */
+export async function invitationLink(userId: string, agreementId: string): Promise<{ url: string; expiresAt: string; channel: "EMAIL" | "LINK" }> {
+  const result = await getPool().query<{ invite_token_ciphertext: Uint8Array | null; invite_expires_at: Date | null; invite_consumed_at: Date | null; invite_channel: "EMAIL" | "LINK"; state: AgreementState }>(`
+    SELECT p.invite_token_ciphertext, p.invite_expires_at, p.invite_consumed_at, p.invite_channel, a.state
+    FROM agreements a JOIN parties p ON p.agreement_id = a.id AND p.role = 'COUNTERPARTY'
+    WHERE a.id = $1 AND a.creator_id = $2
+  `, [agreementId, userId]);
+  const row = result.rows[0];
+  if (!row || !row.invite_token_ciphertext || row.invite_consumed_at || row.state !== "PENDING_SIGNATURES"
+      || !row.invite_expires_at || row.invite_expires_at.getTime() <= Date.now()) {
+    throw new ProblemError(404, "No active invitation", "There is no active invitation for this agreement.");
+  }
+  const token = await decryptText(row.invite_token_ciphertext, "invite-token");
+  return { url: `${env().APP_BASE_URL}/g/${encodeURIComponent(token)}`, expiresAt: row.invite_expires_at.toISOString(), channel: row.invite_channel };
 }

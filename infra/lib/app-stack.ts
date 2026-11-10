@@ -26,6 +26,7 @@ import * as cwActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as appconfig from "aws-cdk-lib/aws-appconfig";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import * as appscaling from "aws-cdk-lib/aws-applicationautoscaling";
+import * as cr from "aws-cdk-lib/custom-resources";
 import { NagSuppressions } from "cdk-nag";
 import type { BaseStack } from "./base-stack";
 
@@ -165,7 +166,7 @@ export class AppStack extends cdk.Stack {
     new cognito.CfnUserPoolGroup(this, "SupportGroup", { userPoolId: userPool.userPoolId, groupName: "support", description: "Read-only support" });
     const userPoolClient = userPool.addClient("WebClient", {
       userPoolClientName: `${p}-web`, generateSecret: true,
-      oAuth: { flows: { authorizationCodeGrant: true }, scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],
+      oAuth: { flows: { authorizationCodeGrant: true }, scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE, cognito.OAuthScope.COGNITO_ADMIN],
         callbackUrls: [`https://${domain}/api/auth/callback`], logoutUrls: [`https://${domain}/`] },
       preventUserExistenceErrors: true, enableTokenRevocation: true,
       accessTokenValidity: cdk.Duration.minutes(30), idTokenValidity: cdk.Duration.minutes(30), refreshTokenValidity: cdk.Duration.hours(12),
@@ -198,7 +199,28 @@ export class AppStack extends cdk.Stack {
     new route53.MxRecord(this, "MailFromMx", { zone: base.zone, recordName: mailFrom, values: [{ priority: 10, hostName: `feedback-smtp.${this.region}.amazonses.com` }] });
     new route53.TxtRecord(this, "MailFromSpf", { zone: base.zone, recordName: mailFrom, values: ["v=spf1 include:amazonses.com ~all"] });
     new route53.TxtRecord(this, "Dmarc", { zone: base.zone, recordName: `_dmarc.${domain}`, values: ["v=DMARC1; p=none; adkim=s; aspf=s"] });
-    void sesActions;
+    // Inbound mail for @<domain> (owner mailbox, abuse reports, end-to-end tests). Stored privately, kept 30 days.
+    const inboundMail = new s3.Bucket(this, "InboundMail", {
+      bucketName: `${p}-inbound-mail-${this.account}`,
+      encryption: s3.BucketEncryption.S3_MANAGED, blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL, enforceSSL: true,
+      lifecycleRules: [{ expiration: cdk.Duration.days(30) }], removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+    const inboundRuleSetName = `${p}-inbound`;
+    const inboundRules = new ses.ReceiptRuleSet(this, "InboundRules", {
+      receiptRuleSetName: inboundRuleSetName,
+      rules: [{
+        recipients: [domain], scanEnabled: true, tlsPolicy: ses.TlsPolicy.REQUIRE,
+        actions: [new sesActions.S3({ bucket: inboundMail, objectKeyPrefix: "inbox/" })],
+      }],
+    });
+    const activateRules = new cr.AwsCustomResource(this, "ActivateInboundRules", {
+      onCreate: { service: "SES", action: "setActiveReceiptRuleSet", parameters: { RuleSetName: inboundRuleSetName }, physicalResourceId: cr.PhysicalResourceId.of(inboundRuleSetName) },
+      onUpdate: { service: "SES", action: "setActiveReceiptRuleSet", parameters: { RuleSetName: inboundRuleSetName }, physicalResourceId: cr.PhysicalResourceId.of(inboundRuleSetName) },
+      policy: cr.AwsCustomResourcePolicy.fromStatements([new iam.PolicyStatement({ actions: ["ses:SetActiveReceiptRuleSet"], resources: ["*"] })]),
+      installLatestAwsSdk: false,
+    });
+    activateRules.node.addDependency(inboundRules);
+    new route53.MxRecord(this, "InboundMx", { zone: base.zone, values: [{ priority: 10, hostName: `inbound-smtp.${this.region}.amazonaws.com` }] });
 
     // ---------- Secrets ----------
     const originSecret = new secretsmanager.Secret(this, "OriginVerify", {
@@ -358,7 +380,7 @@ export class AppStack extends cdk.Stack {
     const workerLogs = new logs.LogGroup(this, "WorkerLogs", { logGroupName: `/theckards/${envName}/worker`, retention: logs.RetentionDays.THREE_MONTHS, removalPolicy: cdk.RemovalPolicy.RETAIN });
     workerTask.addContainer("worker", {
       image: ecs.ContainerImage.fromEcrRepository(base.workerRepo, props.imageTag),
-      environment: commonEnv, secrets: dbSecrets, stopTimeout: cdk.Duration.seconds(30),
+      environment: commonEnv, secrets: { ...dbSecrets, EMAIL_HASH_SECRET: ecs.Secret.fromSecretsManager(emailHashSecret) }, stopTimeout: cdk.Duration.seconds(30),
       portMappings: [{ containerPort: 8080 }],
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: "worker", logGroup: workerLogs }),
       healthCheck: { command: ["CMD-SHELL", "node -e \"fetch('http://localhost:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""], interval: cdk.Duration.seconds(30), timeout: cdk.Duration.seconds(5), retries: 3, startPeriod: cdk.Duration.seconds(30) },

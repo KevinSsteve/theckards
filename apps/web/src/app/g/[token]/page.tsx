@@ -30,7 +30,7 @@ export default async function GuestPage({ params }: { params: Promise<{ token: s
       <p className="muted">Version {invite.versionNumber}{invite.creatorSignedName ? ` · signed by ${invite.creatorSignedName}` : ""}</p>
       <p className="notice">Review before signing. Not legal advice. Theckards provides a verifiable record. It does not certify identity, hold funds or guarantee payment.</p>
       {invite.sections.map((section) => <section className="card" key={section.heading}><h2>{section.heading}</h2>{section.paragraphs.map((p) => <p key={p}>{p}</p>)}</section>)}
-      <GuestActions token={token} usable={usable} signedAt={invite.counterpartySignedAt?.toISOString() ?? null}
+      <GuestActions token={token} usable={usable} askEmail={invite.channel === "LINK"} signedAt={invite.counterpartySignedAt?.toISOString() ?? null}
         state={invite.state} finalAvailable={ownsSession && !!invite.finalSealId} renderReady={invite.renderStatus === "READY"} />
     </main>
   </>;

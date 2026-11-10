@@ -47,3 +47,12 @@ describe("signing migration", () => {
     expect(schema).toContain("sha256 char(64) NOT NULL UNIQUE");
   });
 });
+
+describe("QR invitation migration", () => {
+  it("adds the invitation channel and keeps the token only as hash plus KMS ciphertext", () => {
+    const schema = migrations.find((migration) => migration.id === "0005")?.sql ?? "";
+    expect(schema).toContain("invite_channel IN ('EMAIL', 'LINK')");
+    expect(schema).toContain("invite_token_ciphertext bytea");
+    expect(schema).not.toMatch(/invite_token text/);
+  });
+});

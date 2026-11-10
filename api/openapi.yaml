@@ -101,6 +101,16 @@ paths:
         '200': { description: Counterparty invited }
         '409': { $ref: '#/components/responses/Problem' }
         '412': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/invite/qr:
+    get:
+      summary: Current invitation link and QR code (SVG) for in-person signing
+      operationId: getInvitationQr
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+      responses:
+        '200': { description: Invitation URL, expiry and QR SVG }
+        '404': { $ref: '#/components/responses/Problem' }
   /api/agreements/{id}/cancel:
     post:
       summary: Cancel an unsigned agreement

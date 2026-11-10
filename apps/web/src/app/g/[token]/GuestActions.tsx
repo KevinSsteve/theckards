@@ -2,8 +2,8 @@
 
 import { SignForm } from "../../components/SignForm";
 
-export function GuestActions({ token, usable, signedAt, state, finalAvailable, renderReady }: {
-  token: string; usable: boolean; signedAt: string | null; state: string; finalAvailable: boolean; renderReady: boolean;
+export function GuestActions({ token, usable, askEmail, signedAt, state, finalAvailable, renderReady }: {
+  token: string; usable: boolean; askEmail: boolean; signedAt: string | null; state: string; finalAvailable: boolean; renderReady: boolean;
 }) {
   if (signedAt) {
     return <section className="card">
@@ -24,6 +24,7 @@ export function GuestActions({ token, usable, signedAt, state, finalAvailable, r
     codeUrl={`/api/guest/${encodeURIComponent(token)}/otp`}
     submitUrl={`/api/guest/${encodeURIComponent(token)}/complete`}
     headers={() => ({})}
+    askEmail={askEmail}
     allowRequestChanges
     onDone={() => window.location.reload()}
   />;
