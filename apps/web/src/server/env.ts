@@ -10,6 +10,7 @@ const EnvSchema = z.object({
   DB_NAME: z.string().min(1).default("theckards"),
   DB_USER: z.string().min(1),
   DB_PASSWORD: z.string().min(1),
+  DOCUMENTS_BUCKET: z.string().min(3),
   DATA_KEY_ARN: z.string().startsWith("arn:"),
   AUTH_HMAC_SECRET: z.string().min(32),
   EMAIL_HASH_SECRET: z.string().min(32),

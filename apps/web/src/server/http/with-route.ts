@@ -1,10 +1,13 @@
+import { canonicalJson } from "@theckards/domain";
 import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import type { z } from "zod";
 import { ADMIN_COOKIE, USER_COOKIE } from "../auth/cookies";
 import { verifyMutationRequest } from "../auth/csrf";
+import { sha256 } from "../crypto";
 import { loadSession, type SessionIdentity } from "../auth/session-store";
 import { enforceRateLimit, requestAddress } from "../rate-limit";
+import { claimIdempotency, completeIdempotency, releaseIdempotency, type IdempotencyClaim } from "./idempotency";
 import { ProblemError, problemResponse } from "./problem";
 
 export interface RouteOptions<TSchema extends z.ZodTypeAny | undefined = undefined> {
@@ -13,6 +16,7 @@ export interface RouteOptions<TSchema extends z.ZodTypeAny | undefined = undefin
   rateLimit?: { scope: string; limit: number; windowSeconds: number };
   csrf?: boolean;
   ownerOnly?: boolean;
+  idempotent?: string;
 }
 
 export interface RouteInvocation<TBody = unknown> {
@@ -47,6 +51,8 @@ export function withRoute<TSchema extends z.ZodTypeAny | undefined = undefined>(
       }
       const isMutation = !["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase());
       if (isMutation && options.auth !== "public" && options.csrf !== false && session) verifyMutationRequest(request, session);
+      const contentLength = Number(request.headers.get("content-length") ?? 0);
+      if (contentLength > 1_048_576) throw new ProblemError(413, "Payload Too Large", "Request bodies are limited to 1 MB.");
       let body: unknown = undefined;
       if (options.schema) {
         let json: unknown;
@@ -56,7 +62,31 @@ export function withRoute<TSchema extends z.ZodTypeAny | undefined = undefined>(
         body = parsed.data;
       }
       const params = await context.params;
-      const response = await handler({ request, requestId, session, body: body as never, params });
+      let idempotency: IdempotencyClaim | undefined;
+      if (isMutation && options.idempotent) {
+        const key = request.headers.get("idempotency-key");
+        if (!key || !/^[A-Za-z0-9._:-]{8,128}$/.test(key)) throw new ProblemError(400, "Idempotency-Key required", "Provide a valid Idempotency-Key header.");
+        idempotency = {
+          scope: `${options.idempotent}:${session?.userId ?? requestAddress(request)}`,
+          key,
+          requestHash: sha256(canonicalJson(body ?? null)),
+        };
+        const replay = await claimIdempotency(idempotency);
+        if (replay) {
+          const replayHeaders = new Headers(replay.headers);
+          replayHeaders.set("x-request-id", requestId);
+          replayHeaders.set("cache-control", "no-store");
+          return new Response(replay.body, { status: replay.status, statusText: replay.statusText, headers: replayHeaders });
+        }
+      }
+      let response: Response;
+      try {
+        response = await handler({ request, requestId, session, body: body as never, params });
+        if (idempotency) await completeIdempotency(idempotency, response);
+      } catch (error) {
+        if (idempotency) await releaseIdempotency(idempotency);
+        throw error;
+      }
       const headers = new Headers(response.headers);
       headers.set("x-request-id", requestId);
       headers.set("cache-control", "no-store");

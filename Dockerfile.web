@@ -3,7 +3,7 @@ RUN corepack enable
 WORKDIR /repo
 COPY . .
 RUN pnpm install --frozen-lockfile --ignore-scripts=false
-RUN pnpm lint && pnpm -r typecheck && pnpm -r test
+RUN pnpm lint && pnpm -r typecheck && pnpm test
 RUN pnpm --filter @theckards/domain build \
  && pnpm --filter @theckards/database build \
  && pnpm --filter @theckards/web build

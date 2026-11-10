@@ -73,6 +73,7 @@ export async function runMigrations(
     await client.query("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO theckards_app");
     await client.query("REVOKE ALL ON schema_migrations FROM theckards_app");
     await client.query("REVOKE UPDATE, DELETE ON user_consents, app_settings_history, audit_logs FROM theckards_app");
+    await client.query("REVOKE DELETE ON agreements, agreement_versions, parties FROM theckards_app");
     return applied;
   } finally {
     await client.query("SELECT pg_advisory_unlock(hashtext('theckards-schema-migrations'))").catch(() => undefined);

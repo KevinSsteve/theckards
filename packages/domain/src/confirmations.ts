@@ -1,10 +1,11 @@
+import type { TemplateId } from "./templates.js";
+
 export const CONFIRMATION_KINDS = [
   "ITEM_DELIVERED", "ITEM_RECEIVED", "SERVICE_DONE", "SERVICE_ACCEPTED",
   "PAYMENT_SENT", "PAYMENT_RECEIVED", "FULFILLED",
 ] as const;
 export type ConfirmationKind = (typeof CONFIRMATION_KINDS)[number];
 
-export type TemplateId = "purchase_sale" | "services" | "general";
 export type PartyRole = "SELLER" | "BUYER" | "PROVIDER" | "CLIENT" | "CREATOR" | "COUNTERPARTY";
 
 export interface Slot { kind: ConfirmationKind; role: PartyRole }

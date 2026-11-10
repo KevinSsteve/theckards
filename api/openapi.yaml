@@ -1,56 +1,230 @@
 openapi: 3.1.0
 info:
   title: Theckards API
-  version: 0.2.0
+  version: 0.3.0
+  license:
+    name: Proprietary
 servers:
   - url: https://theckards.linkealls.com
 paths:
   /api/auth/login:
     get:
+      summary: Start Cognito sign-in
+      operationId: startSignIn
       security: []
-      responses: { '302': { description: Redirect to Cognito managed login }, '429': { $ref: '#/components/responses/Problem' } }
+      responses:
+        '302': { description: Redirect to Cognito managed login }
+        '429': { $ref: '#/components/responses/Problem' }
   /api/auth/callback:
     get:
+      summary: Complete Cognito sign-in
+      operationId: completeSignIn
       security: []
-      responses: { '302': { description: Session created }, '400': { $ref: '#/components/responses/Problem' } }
+      responses:
+        '302': { description: Session created and redirected }
+        '400': { $ref: '#/components/responses/Problem' }
   /api/auth/logout:
     post:
+      summary: Revoke the current user session
+      operationId: logoutUser
       security: [{ userSession: [] }]
-      responses: { '200': { description: Session revoked }, '401': { $ref: '#/components/responses/Problem' } }
+      responses:
+        '200': { description: Session revoked }
+        '401': { $ref: '#/components/responses/Problem' }
   /api/legal/consent:
     post:
+      summary: Accept all current legal document versions
+      operationId: acceptLegalDocuments
       security: [{ userSession: [] }]
-      responses: { '200': { description: Current legal versions accepted }, '401': { $ref: '#/components/responses/Problem' } }
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Consent records created }
+        '401': { $ref: '#/components/responses/Problem' }
+  /api/templates:
+    get:
+      summary: List the three versioned agreement templates
+      operationId: listTemplates
+      security: [{ userSession: [] }]
+      responses:
+        '200': { description: Template descriptors }
+        '401': { $ref: '#/components/responses/Problem' }
+  /api/agreements:
+    get:
+      summary: List agreements visible to the current user
+      operationId: listAgreements
+      security: [{ userSession: [] }]
+      responses:
+        '200': { description: Agreements visible to the user }
+        '401': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Create a draft agreement and queue its preview
+      operationId: createAgreement
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201': { description: Draft and preview job created }
+        '402': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}:
+    get:
+      summary: Get an agreement visible to the current user
+      operationId: getAgreement
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+      responses:
+        '200': { description: Agreement }
+        '404': { $ref: '#/components/responses/Problem' }
+    patch:
+      summary: Create a new immutable agreement version
+      operationId: updateAgreement
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: New agreement version }
+        '412': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/invite:
+    post:
+      summary: Invite the counterparty to review and sign
+      operationId: inviteCounterparty
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Counterparty invited }
+        '409': { $ref: '#/components/responses/Problem' }
+        '412': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/cancel:
+    post:
+      summary: Cancel an unsigned agreement
+      operationId: cancelAgreement
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Agreement cancelled }
+        '409': { $ref: '#/components/responses/Problem' }
+        '412': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/milestones:
+    post:
+      summary: Add an agreement milestone
+      operationId: addMilestone
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201': { description: Milestone created }
+        '412': { $ref: '#/components/responses/Problem' }
+  /api/agreements/{id}/preview:
+    get:
+      summary: Download the private PDF preview
+      operationId: getAgreementPreview
+      security: [{ userSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgreementId'
+      responses:
+        '200': { description: Private PDF preview }
+        '404': { $ref: '#/components/responses/Problem' }
   /api/admin/settings:
     get:
+      summary: List product settings
+      operationId: listAdminSettings
       security: [{ adminSession: [] }]
-      responses: { '200': { description: Settings }, '403': { $ref: '#/components/responses/Problem' } }
+      responses:
+        '200': { description: Settings }
+        '403': { $ref: '#/components/responses/Problem' }
   /api/admin/settings/{key}:
     patch:
+      summary: Update and version a product setting
+      operationId: updateAdminSetting
       security: [{ adminSession: [] }]
-      parameters: [{ name: key, in: path, required: true, schema: { type: string } }]
-      responses: { '200': { description: Setting updated }, '403': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' } }
+      parameters:
+        - $ref: '#/components/parameters/SettingKey'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Setting updated }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /api/admin/settings/{key}/history:
     get:
+      summary: List setting version history
+      operationId: listAdminSettingHistory
       security: [{ adminSession: [] }]
-      parameters: [{ name: key, in: path, required: true, schema: { type: string } }]
-      responses: { '200': { description: Version history }, '403': { $ref: '#/components/responses/Problem' } }
+      parameters:
+        - $ref: '#/components/parameters/SettingKey'
+      responses:
+        '200': { description: Version history }
+        '403': { $ref: '#/components/responses/Problem' }
   /api/admin/settings/{key}/rollback:
     post:
+      summary: Roll back a setting by creating a new version
+      operationId: rollbackAdminSetting
       security: [{ adminSession: [] }]
-      parameters: [{ name: key, in: path, required: true, schema: { type: string } }]
-      responses: { '200': { description: Setting rolled back as a new version }, '403': { $ref: '#/components/responses/Problem' } }
+      parameters:
+        - $ref: '#/components/parameters/SettingKey'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Setting rolled back }
+        '403': { $ref: '#/components/responses/Problem' }
   /api/admin/legal:
     get:
+      summary: List legal document versions
+      operationId: listLegalDocumentVersions
       security: [{ adminSession: [] }]
-      responses: { '200': { description: Legal documents }, '403': { $ref: '#/components/responses/Problem' } }
+      responses:
+        '200': { description: Legal documents }
+        '403': { $ref: '#/components/responses/Problem' }
     post:
+      summary: Create the next legal draft version
+      operationId: createLegalDraft
       security: [{ adminSession: [] }]
-      responses: { '201': { description: Next draft version created }, '403': { $ref: '#/components/responses/Problem' } }
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201': { description: Draft created }
+        '403': { $ref: '#/components/responses/Problem' }
 components:
   securitySchemes:
-    userSession: { type: apiKey, in: cookie, name: __Host-theckards_session }
-    adminSession: { type: apiKey, in: cookie, name: __Host-theckards_admin_session }
+    userSession:
+      type: apiKey
+      in: cookie
+      name: __Host-theckards_session
+    adminSession:
+      type: apiKey
+      in: cookie
+      name: __Host-theckards_admin_session
+  parameters:
+    AgreementId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SettingKey:
+      name: key
+      in: path
+      required: true
+      schema: { type: string }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 128 }
   schemas:
     Problem:
       type: object

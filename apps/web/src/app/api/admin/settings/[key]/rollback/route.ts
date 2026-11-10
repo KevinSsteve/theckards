@@ -7,7 +7,7 @@ import { withRoute } from "../../../../../../server/http/with-route";
 
 const Body = z.object({ targetVersion: z.number().int().positive(), expectedVersion: z.number().int().positive() });
 
-export const POST = withRoute({ auth: "admin", ownerOnly: true, schema: Body }, async ({ params, body, session, requestId }) => {
+export const POST = withRoute({ auth: "admin", ownerOnly: true, schema: Body, idempotent: "admin-setting-rollback" }, async ({ params, body, session, requestId }) => {
   const key = params.key;
   if (!key || !isSettingKey(key)) throw new ProblemError(404, "Not Found", "Setting not found.");
   if (Date.now() - session!.recentAuthAt.getTime() > 5 * 60_000) throw new ProblemError(403, "Reauthentication required", "Sign in again before rolling back a setting.");

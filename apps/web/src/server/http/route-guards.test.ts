@@ -36,3 +36,22 @@ describe("API route guard contract", () => {
     expect(USER_COOKIE).not.toBe(ADMIN_COOKIE);
   });
 });
+
+describe("agreement route authorization contract", () => {
+  it("requires a user session on every agreement and template route", async () => {
+    const agreementRoot = path.resolve(process.cwd(), "src/app/api/agreements");
+    for (const file of await routeFiles(agreementRoot)) {
+      const source = await readFile(file, "utf8");
+      expect(source, file).toMatch(/auth:\s*"user"/);
+    }
+    const templates = await readFile(path.resolve(process.cwd(), "src/app/api/templates/route.ts"), "utf8");
+    expect(templates).toMatch(/auth:\s*"user"/);
+  });
+
+  it("requires If-Match on resource mutations", async () => {
+    for (const relative of ["[id]/route.ts", "[id]/invite/route.ts", "[id]/cancel/route.ts", "[id]/milestones/route.ts"]) {
+      const source = await readFile(path.resolve(process.cwd(), "src/app/api/agreements", relative), "utf8");
+      expect(source, relative).toContain("readIfMatch(request)");
+    }
+  });
+});

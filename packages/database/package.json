@@ -17,6 +17,7 @@
     "test": "vitest --run"
   },
   "dependencies": {
+    "@theckards/domain": "workspace:*",
     "aws-ssl-profiles": "^1.1.2",
     "pg": "^8.13.0"
   },

@@ -19,7 +19,7 @@ export default async function AccountPage() {
           ? <p className="success">Your current legal documents are accepted.</p>
           : <><p className="notice">Before creating or signing an agreement, review the current legal documents.</p><a className="button" href="/legal/consent">Review and accept</a></>}
       </section>
-      <section className="card"><h2>Agreements</h2><p className="muted">Agreement creation arrives in the next delivery (S3).</p></section>
+      <section className="card"><h2>Agreements</h2>{accepted ? <a className="button" href="/dashboard">Open agreements</a> : <p className="muted">Accept the current legal documents to continue.</p>}</section>
     </main>
   </>;
 }

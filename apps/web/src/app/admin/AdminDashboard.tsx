@@ -42,7 +42,7 @@ function SettingCard({ initial, editable }: { initial: Setting; editable: boolea
       try { value = JSON.parse(text); } catch { setMessage("Invalid JSON."); setBusy(false); return; }
       const response = await fetch(`/api/admin/settings/${setting.key}`, {
         method: "PATCH",
-        headers: { "content-type": "application/json", "x-csrf-token": csrf() },
+        headers: { "content-type": "application/json", "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() },
         body: JSON.stringify({ value, expectedVersion: setting.version }),
       });
       const body = await response.json() as { setting?: Setting; detail?: string };
@@ -61,14 +61,14 @@ function LegalCard({ initial, editable }: { initial: LegalDocument; editable: bo
   const isDraft = document.status === "DRAFT";
   async function save() {
     setBusy(true); setMessage("");
-    const response = await fetch(`/api/admin/legal/${document.id}`, { method: "PATCH", headers: { "content-type": "application/json", "x-csrf-token": csrf() }, body: JSON.stringify({ title, bodyMd }) });
+    const response = await fetch(`/api/admin/legal/${document.id}`, { method: "PATCH", headers: { "content-type": "application/json", "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ title, bodyMd }) });
     const result = await response.json() as { detail?: string };
     setMessage(response.ok ? "Draft saved." : (result.detail ?? "Save failed.")); setBusy(false);
   }
   async function approve() {
     if (!window.confirm("Approve this exact legal text for production? Approved content is immutable.")) return;
     setBusy(true); setMessage("");
-    const response = await fetch(`/api/admin/legal/${document.id}/approve`, { method: "POST", headers: { "x-csrf-token": csrf() } });
+    const response = await fetch(`/api/admin/legal/${document.id}/approve`, { method: "POST", headers: { "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() } });
     const result = await response.json() as { detail?: string };
     if (response.ok) { setDocument({ ...document, status: "APPROVED" }); setMessage("Approved for production."); }
     else setMessage(result.detail ?? "Approval failed.");
@@ -83,7 +83,7 @@ function LegalCard({ initial, editable }: { initial: LegalDocument; editable: bo
       ? <div className="actions"><button className="secondary" disabled={!editable || busy} onClick={save}>Save draft</button><button disabled={!editable || busy} onClick={approve}>Approve</button></div>
       : <button className="secondary" disabled={!editable || busy} onClick={async () => {
           setBusy(true); setMessage("");
-          const response = await fetch("/api/admin/legal", { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf() }, body: JSON.stringify({ documentType: document.documentType, locale: document.locale, title, bodyMd }) });
+          const response = await fetch("/api/admin/legal", { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ documentType: document.documentType, locale: document.locale, title, bodyMd }) });
           const result = await response.json() as { detail?: string };
           setMessage(response.ok ? "Next draft created. Reload to edit it." : (result.detail ?? "Draft creation failed.")); setBusy(false);
         }}>Create next draft</button>}

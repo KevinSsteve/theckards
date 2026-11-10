@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { AGREEMENT_STATES } from "@theckards/domain";
 import { migrations } from "./migrations.js";
 
 describe("database migrations", () => {
@@ -19,5 +20,19 @@ describe("database migrations", () => {
     expect(schema).toContain("user_consents_append_only");
     expect(schema).toContain("audit_logs_append_only");
     expect(schema).not.toContain("DROP TABLE");
+  });
+});
+
+describe("agreement migration", () => {
+  it("derives every agreement state from the domain enum", () => {
+    const schema = migrations.find((migration) => migration.id === "0003")?.sql ?? "";
+    for (const state of AGREEMENT_STATES) expect(schema).toContain(`'${state}'`);
+  });
+
+  it("stores immutable versions and hashed invitation tokens", () => {
+    const schema = migrations.find((migration) => migration.id === "0003")?.sql ?? "";
+    expect(schema).toContain("agreement_versions_content_immutable");
+    expect(schema).toContain("invite_token_hash char(64)");
+    expect(schema).not.toContain("invite_token text");
   });
 });

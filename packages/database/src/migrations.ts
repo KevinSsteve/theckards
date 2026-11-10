@@ -1,3 +1,5 @@
+import { agreementStateCheckSql } from "@theckards/domain";
+
 export interface Migration {
   readonly id: string;
   readonly name: string;
@@ -230,6 +232,113 @@ INSERT INTO legal_documents(document_type, locale, version, status, title, body_
   ('ESIGN', 'en-US', 1, 'DRAFT', 'Electronic Signature Consent', '# Electronic Signature Consent\n\nDRAFT — approval required before signing.'),
   ('NOTICE', 'en-US', 1, 'DRAFT', 'Important Notice', '# Important Notice\n\nTheckards provides a verifiable record. It does not provide legal advice or handle payments between parties.')
 ON CONFLICT (document_type, locale, version) DO NOTHING;
+`,
+  },
+  {
+    id: "0003",
+    name: "agreement_engine",
+    sql: `
+CREATE TABLE IF NOT EXISTS agreements (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  creator_id uuid NOT NULL REFERENCES users(id),
+  template_id text NOT NULL CHECK (template_id IN ('purchase_sale', 'services', 'general')),
+  template_version integer NOT NULL DEFAULT 1 CHECK (template_version > 0),
+  title text NOT NULL CHECK (char_length(title) BETWEEN 3 AND 120),
+  state text NOT NULL DEFAULT 'DRAFT' ${agreementStateCheckSql("state")},
+  lock_version integer NOT NULL DEFAULT 1 CHECK (lock_version > 0),
+  current_version_number integer NOT NULL DEFAULT 1 CHECK (current_version_number > 0),
+  due_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS agreements_creator_idx ON agreements(creator_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS agreements_state_due_idx ON agreements(state, due_at) WHERE due_at IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS agreement_versions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agreement_id uuid NOT NULL REFERENCES agreements(id),
+  number integer NOT NULL CHECK (number > 0),
+  title text NOT NULL CHECK (char_length(title) BETWEEN 3 AND 120),
+  fields jsonb NOT NULL,
+  content_sha256 char(64) NOT NULL,
+  render_status text NOT NULL DEFAULT 'PENDING' CHECK (render_status IN ('PENDING', 'READY', 'FAILED')),
+  document_s3_key text,
+  document_sha256 char(64),
+  render_error_code text,
+  created_by uuid NOT NULL REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(agreement_id, number),
+  CHECK ((render_status = 'READY' AND document_s3_key IS NOT NULL AND document_sha256 IS NOT NULL) OR render_status <> 'READY')
+);
+CREATE INDEX IF NOT EXISTS agreement_versions_current_idx ON agreement_versions(agreement_id, number DESC);
+
+CREATE TABLE IF NOT EXISTS parties (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agreement_id uuid NOT NULL REFERENCES agreements(id),
+  role text NOT NULL CHECK (role IN ('CREATOR', 'COUNTERPARTY')),
+  user_id uuid REFERENCES users(id),
+  display_name text NOT NULL CHECK (char_length(display_name) BETWEEN 1 AND 120),
+  email_ciphertext bytea,
+  email_hash char(64),
+  invite_token_hash char(64) UNIQUE,
+  invite_expires_at timestamptz,
+  invited_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(agreement_id, role),
+  CHECK (role <> 'CREATOR' OR user_id IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS parties_user_idx ON parties(user_id, agreement_id) WHERE user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS parties_invite_idx ON parties(invite_token_hash) WHERE invite_token_hash IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS milestones (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agreement_id uuid NOT NULL REFERENCES agreements(id),
+  title text NOT NULL CHECK (char_length(title) BETWEEN 1 AND 200),
+  due_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS milestones_agreement_due_idx ON milestones(agreement_id, due_at);
+
+CREATE TABLE IF NOT EXISTS processed_jobs (
+  job_id uuid PRIMARY KEY,
+  topic text NOT NULL,
+  processed_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE OR REPLACE FUNCTION protect_agreement_version_content() RETURNS trigger AS $$
+BEGIN
+  IF NEW.agreement_id IS DISTINCT FROM OLD.agreement_id
+     OR NEW.number IS DISTINCT FROM OLD.number
+     OR NEW.title IS DISTINCT FROM OLD.title
+     OR NEW.fields IS DISTINCT FROM OLD.fields
+     OR NEW.content_sha256 IS DISTINCT FROM OLD.content_sha256
+     OR NEW.created_by IS DISTINCT FROM OLD.created_by
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'agreement version content is immutable' USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS agreement_versions_content_immutable ON agreement_versions;
+CREATE TRIGGER agreement_versions_content_immutable BEFORE UPDATE ON agreement_versions
+FOR EACH ROW EXECUTE FUNCTION protect_agreement_version_content();
+
+ALTER TABLE sessions ALTER COLUMN user_id DROP NOT NULL;
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_check;
+ALTER TABLE sessions ADD CONSTRAINT sessions_actor_scope_check CHECK (
+  (kind = 'GUEST' AND user_id IS NULL AND guest_agreement_id IS NOT NULL AND guest_party_id IS NOT NULL)
+  OR (kind IN ('USER', 'ADMIN') AND user_id IS NOT NULL AND guest_agreement_id IS NULL AND guest_party_id IS NULL)
+) NOT VALID;
+ALTER TABLE sessions VALIDATE CONSTRAINT sessions_actor_scope_check;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'sessions_guest_agreement_fk') THEN
+    ALTER TABLE sessions ADD CONSTRAINT sessions_guest_agreement_fk FOREIGN KEY (guest_agreement_id) REFERENCES agreements(id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'sessions_guest_party_fk') THEN
+    ALTER TABLE sessions ADD CONSTRAINT sessions_guest_party_fk FOREIGN KEY (guest_party_id) REFERENCES parties(id);
+  END IF;
+END $$;
 `,
   },
 ] as const;

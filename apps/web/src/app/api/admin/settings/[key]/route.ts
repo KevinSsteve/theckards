@@ -8,7 +8,7 @@ import { withRoute } from "../../../../../server/http/with-route";
 
 const Body = z.object({ value: z.unknown(), expectedVersion: z.number().int().positive() });
 
-export const PATCH = withRoute({ auth: "admin", schema: Body, ownerOnly: true, rateLimit: { scope: "admin-setting", limit: 60, windowSeconds: 3600 } }, async ({ session, body, params, requestId }) => {
+export const PATCH = withRoute({ auth: "admin", schema: Body, ownerOnly: true, idempotent: "admin-setting", rateLimit: { scope: "admin-setting", limit: 60, windowSeconds: 3600 } }, async ({ session, body, params, requestId }) => {
   const key = params.key;
   if (!key || !isSettingKey(key)) throw new ProblemError(404, "Not Found", "Setting not found.");
   const definition = settingsRegistry.find((item) => item.key === key)!;

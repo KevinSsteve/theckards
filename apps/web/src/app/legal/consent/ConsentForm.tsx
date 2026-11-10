@@ -17,7 +17,7 @@ export function ConsentForm() {
     {error && <p className="error" role="alert">{error}</p>}
     <button disabled={!accepted || busy} onClick={async () => {
       setBusy(true); setError("");
-      const response = await fetch("/api/legal/consent", { method: "POST", headers: { "x-csrf-token": csrf() } });
+      const response = await fetch("/api/legal/consent", { method: "POST", headers: { "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() } });
       if (!response.ok) { const body = await response.json() as { detail?: string }; setError(body.detail ?? "Could not record consent."); setBusy(false); return; }
       window.location.assign("/account");
     }}>{busy ? "Recording…" : "Accept and continue"}</button>
