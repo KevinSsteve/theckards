@@ -95,3 +95,15 @@ For a visual change, check 320, 390, 768 and 1440 px; 200% zoom; keyboard order;
 CSP console errors; and axe WCAG 2.2 AA. The main state set includes home, verification result, empty and populated
 dashboard, agreement before and after signing, evidence, case/addendum, dossier, guest OTP, in-person code, legal
 consent, expired links, Admin settings/legal/audit, loading, error and 404.
+
+## Production verification
+
+Release `c10bd27` was checked on 2026-11-11 at 320, 390, 768 and 1,440 px. Across 40 public and 24 signed-in
+route/width combinations, axe found no WCAG or best-practice violation and the document never exceeded the
+viewport. Buttons remain at least 44 px high; checkbox and radio labels are at least 28 px. The skip link transfers
+focus to the main content and normal-browser runs reported no CSP violation.
+
+Under the Lighthouse mobile throttling profile, the six measured pages stayed between 1,288 and 1,704 ms LCP and
+102–111 KB initial JavaScript. The passive production ZAP scan remained High 0, Medium 0, Low 0. Detailed coverage,
+the two manually resolved axe contrast checks on the long agreement, and the states that could not be recreated
+without writing append-only production records are in [accessibility.md](accessibility.md).

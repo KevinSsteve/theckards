@@ -14,6 +14,55 @@ what changed, and what has **not** been checked.
 | By hand | Scripted keyboard walks recording where focus lands, contrast computed from computed styles, reflow at 320 CSS px, page titles, and what happens when the session ends with a page open |
 | Performance | Lighthouse's mobile throttling values applied through the DevTools protocol: 4× CPU, 562.5 ms request latency, 1.44 Mbps down, cache disabled. This is the same profile Lighthouse uses, not Lighthouse itself |
 
+## Whole-site interface re-audit
+
+The visual system introduced in `78fa0ae`, with the target-size follow-up in production release `c10bd27`, was
+checked again against the exact production HTML on 2026-11-11.
+
+### Coverage and result
+
+- **Public:** 10 routes at 320, 390, 768 and 1,440 px, 40 combinations: home, verification, offline
+  instructions, all four legal documents, 404, invalid invitation and invalid in-person QR.
+- **Signed in:** 6 routes at the same four widths, 24 combinations: dashboard, account, new agreement, account-link
+  page, legal consent and a full 13-card agreement containing evidence, timeline, resolved case, sealed addendum
+  and dossier.
+- **Axe:** no WCAG or best-practice violation in any of the 64 combinations. It completed every check in 63. On the
+  768 px full-agreement run it marked the contrast of one case quotation and one addendum paragraph inconclusive,
+  saying they might be overlapped. The nodes were more than 4,200 px below the initial viewport. Bringing each into
+  view still made axe report it as inconclusive, while `elementsFromPoint` identified the text itself as the top
+  element and the full-page capture shows no overlap. Their computed colour is `#17201d` on white or `#f8faf9`,
+  measured at 16.66:1 and 15.89:1. This is recorded as a resolved tool limitation, not silently counted as a pass.
+- **Reflow:** no horizontal page scroll in any combination. The long agreement, legal email, seal IDs, hashes,
+  code display, forms, footer and Admin-shaped content all remain inside 320 px.
+- **Targets:** no application control target under 24×24 px. Buttons are at least 44 px high. The visible radio and
+  checkbox are 20 px, inside labels measuring 28 px for a one-line radio and 74 px for the consent statement.
+- **Keyboard and CSP:** the first Tab reveals “Skip to content”; activation moves focus to `MAIN#main-content`.
+  Normal-browser checks reported no CSP violation on any public or authenticated page. `/verify` still hashed the
+  sealed fixture locally and displayed `SEAL A9B3 B22E`.
+- **Security regression:** the passive ZAP scan after the redesign remained High 0, Medium 0, Low 0.
+
+The valid guest OTP, active QR and six-digit confirmation screens were not recreated: doing so would write a new
+signature to the append-only production record. Their components and behavior were unchanged, and their responsive
+patterns were exercised in the earlier 18-state audit below. The real Admin dashboard was not opened because it
+requires the owner's MFA; representative overview and settings markup at 390 and 1,440 px produced no axe finding,
+inconclusive check or overflow.
+
+### Performance after the redesign
+
+Measured in production at 390×844 with the same Lighthouse mobile throttling profile:
+
+| Page | LCP | Initial JavaScript |
+| --- | --- | --- |
+| `/` | 1,372 ms | 102 KB |
+| `/verify` | 1,412 ms | 111 KB |
+| `/verify/how` | 1,368 ms | 102 KB |
+| Dashboard | 1,672 ms | 103 KB |
+| New agreement | 1,288 ms | 103 KB |
+| Agreement with a resolved case | 1,704 ms | 111 KB |
+
+All remain under 2.5 s and 200 KB. The design added no client dependency or client JavaScript; the global stylesheet
+is 5.9 KB gzip.
+
 ## Result: axe
 
 **Zero violations, zero incomplete checks, zero best-practice findings on all 18 page states**, after the fixes:
