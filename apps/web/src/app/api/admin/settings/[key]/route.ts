@@ -11,8 +11,10 @@ const Body = z.object({ value: z.unknown(), expectedVersion: z.number().int().po
 export const PATCH = withRoute({ auth: "admin", schema: Body, ownerOnly: true, idempotent: "admin-setting", rateLimit: { scope: "admin-setting", limit: 60, windowSeconds: 3600 } }, async ({ session, body, params, requestId }) => {
   const key = params.key;
   if (!key || !isSettingKey(key)) throw new ProblemError(404, "Not Found", "Setting not found.");
-  const definition = settingsRegistry.find((item) => item.key === key)!;
-  if (definition.requiresReauth && Date.now() - session!.recentAuthAt.getTime() > 5 * 60_000) {
+  // Fails closed: a key the registry does not describe is treated as needing fresh authentication, so drift
+  // between the schema list and the registry can never quietly drop the reauthentication requirement.
+  const definition = settingsRegistry.find((item) => item.key === key);
+  if ((definition?.requiresReauth ?? true) && Date.now() - session!.recentAuthAt.getTime() > 5 * 60_000) {
     throw new ProblemError(403, "Reauthentication required", "Sign in again before changing this setting.");
   }
   let updated;

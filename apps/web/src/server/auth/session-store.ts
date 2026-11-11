@@ -1,6 +1,6 @@
 import type pg from "pg";
 import type { AdminRole, SessionKind } from "@theckards/domain";
-import { DEFAULT_SESSION_POLICY } from "@theckards/domain";
+import { DEFAULT_SESSION_POLICY, normalizeEmail } from "@theckards/domain";
 import { decryptText, encryptText, hmac, randomToken } from "../crypto";
 import { checkRefreshToken } from "./cognito";
 import { getPool, inTransaction } from "../db";
@@ -29,15 +29,19 @@ export interface NewIdentity {
 export async function upsertUser(identity: Pick<NewIdentity, "sub" | "email">): Promise<string> {
   const encryptedEmail = await encryptText(identity.email.toLowerCase(), "user-email");
   const emailHash = hmac(identity.email.trim().toLowerCase(), "email");
+  // A second keyed hash of the address with provider conventions removed, so the rule that forbids one person
+  // from being both parties can see that alex+sale@gmail.com and a.l.e.x@gmail.com are the same mailbox.
+  const normalizedHash = hmac(normalizeEmail(identity.email), "email");
   const result = await getPool().query<{ id: string; state: string }>(`
-    INSERT INTO users(cognito_sub, email_ciphertext, email_hash)
-    VALUES ($1, $2, $3)
+    INSERT INTO users(cognito_sub, email_ciphertext, email_hash, email_normalized_hash)
+    VALUES ($1, $2, $3, $4)
     ON CONFLICT (cognito_sub) DO UPDATE SET
       email_ciphertext = EXCLUDED.email_ciphertext,
       email_hash = EXCLUDED.email_hash,
+      email_normalized_hash = EXCLUDED.email_normalized_hash,
       updated_at = now()
     RETURNING id, state
-  `, [identity.sub, encryptedEmail, emailHash]);
+  `, [identity.sub, encryptedEmail, emailHash, normalizedHash]);
   const user = result.rows[0];
   if (!user || user.state !== "ACTIVE") throw new Error("Account is not active");
   return user.id;

@@ -219,3 +219,23 @@ describe("IDOR coverage contract", () => {
     }
   });
 });
+
+/**
+ * The Admin dashboard looks every stored setting up in the registry, and the settings API reads the
+ * reauthentication requirement from the same place. If the two lists drift, a migration that adds a key can
+ * break the page the owner needs in order to approve legal texts or switch a flag off.
+ */
+describe("settings registry contract", () => {
+  it("describes exactly the settings the domain defines", async () => {
+    const { SettingsSchemas } = await import("@theckards/domain");
+    const { settingsRegistry } = await import("../admin/settings-registry");
+    expect([...settingsRegistry.map((item) => item.key)].sort()).toEqual(Object.keys(SettingsSchemas).sort());
+  });
+
+  it("requires fresh authentication for every sensitive setting", async () => {
+    const { settingsRegistry } = await import("../admin/settings-registry");
+    for (const item of settingsRegistry) {
+      if (item.sensitive) expect(item.requiresReauth, item.key).toBe(true);
+    }
+  });
+});

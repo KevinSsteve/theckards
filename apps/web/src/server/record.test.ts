@@ -82,4 +82,30 @@ describe("linking the counterparty to an account", () => {
     expect(update?.[1]).toEqual(["p-cp", "u-cp"]);
     expect(String(update?.[0])).toContain("user_id IS NULL");
   });
+
+  // F1. Two accounts can share one mailbox, so matching account ids is not enough to prove two people.
+  it("refuses an account whose address is the creator's own mailbox", async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ creator_id: "u-cr", user_id: null }] })
+      .mockResolvedValueOnce({ rows: [{ matches: true }] });
+    await expect(claimParty("u-cp", guest, "r")).rejects.toMatchObject({ status: 409 });
+    expect(query.mock.calls.some(([sql]) => String(sql).startsWith("UPDATE parties"))).toBe(false);
+  });
+
+  it("compares the normalized mailbox of the creator and the claiming account", async () => {
+    query.mockResolvedValueOnce({ rows: [{ creator_id: "u-cr", user_id: null }] }).mockResolvedValue({ rows: [], rowCount: 1 });
+    await claimParty("u-cp", guest, "r");
+    const check = query.mock.calls.find(([sql]) => String(sql).includes("email_normalized_hash"));
+    expect(check?.[1]).toEqual(["u-cr", "u-cp"]);
+    expect(String(check?.[0])).toContain("creator.email_normalized_hash IS NOT NULL");
+  });
+
+  // A row written before the normalized hash existed must not read as "same person" for everyone.
+  it("does not treat two accounts without a normalized hash as the same person", async () => {
+    query
+      .mockResolvedValueOnce({ rows: [{ creator_id: "u-cr", user_id: null }] })
+      .mockResolvedValueOnce({ rows: [{ matches: false }] })
+      .mockResolvedValue({ rows: [], rowCount: 1 });
+    await expect(claimParty("u-cp", guest, "r")).resolves.toEqual({ agreementId: agreement });
+  });
 });

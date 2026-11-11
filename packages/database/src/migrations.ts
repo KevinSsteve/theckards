@@ -764,4 +764,55 @@ CREATE TRIGGER dossier_requests_forward_only BEFORE UPDATE OR DELETE ON dossier_
 FOR EACH ROW EXECUTE FUNCTION dossier_requests_forward_only();
 `,
   },
+  {
+    id: "0014",
+    name: "trust_profile_and_fraud_rules",
+    // S10. Three things, all of them inert until the owner turns PUBLIC_PROFILE_ENABLED on.
+    //
+    // A normalized form of each address, so the rule that forbids both sides of an agreement being the same
+    // person can see through address tags and provider dots. It is a keyed hash like the existing one, never the
+    // address itself, and it is written going forward: rows created before this keep falling back to the exact
+    // comparison that was already in place.
+    //
+    // Profiles, private by default. The column is called `is_public` and defaults to false, so a profile can
+    // only ever become visible by someone deciding it should.
+    //
+    // The counts themselves live in a cache table that is derived and regenerable. Nothing may write a number
+    // into it by hand, which is why the API never updates it and the job recomputes the whole payload.
+    //
+    // Deliberately seeds no `app_settings` row for the fraud thresholds. Migrations run before the new image is
+    // live, and the running image renders the Admin settings page by looking every stored key up in its own
+    // registry, so a key it has never heard of would break that page until the deploy finished. The thresholds
+    // fall back to the documented defaults while the row is absent, and the row is created the first time the
+    // owner saves them.
+    sql: `
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_normalized_hash char(64);
+ALTER TABLE parties ADD COLUMN IF NOT EXISTS email_normalized_hash char(64);
+CREATE INDEX IF NOT EXISTS users_email_normalized_idx ON users(email_normalized_hash) WHERE email_normalized_hash IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS profiles (
+  user_id uuid PRIMARY KEY REFERENCES users(id),
+  handle text UNIQUE CHECK (handle IS NULL OR handle ~ '^[a-z0-9_]{3,30}$'),
+  display_name text CHECK (display_name IS NULL OR char_length(display_name) BETWEEN 1 AND 60),
+  is_public boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (NOT is_public OR (handle IS NOT NULL AND display_name IS NOT NULL))
+);
+
+CREATE TABLE IF NOT EXISTS agreement_flags (
+  agreement_id uuid NOT NULL REFERENCES agreements(id),
+  rule text NOT NULL CHECK (rule IN ('F1_SAME_PERSON', 'F2_SAME_PAIR', 'F3_BURST', 'F5_IMMEDIATE_CONFIRMATIONS')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (agreement_id, rule)
+);
+CREATE INDEX IF NOT EXISTS agreement_flags_agreement_idx ON agreement_flags(agreement_id);
+
+CREATE TABLE IF NOT EXISTS profile_stats_cache (
+  user_id uuid PRIMARY KEY REFERENCES users(id),
+  computed_at timestamptz NOT NULL DEFAULT now(),
+  payload jsonb NOT NULL
+);
+`,
+  },
 ] as const;

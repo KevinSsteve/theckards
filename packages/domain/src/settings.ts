@@ -44,6 +44,17 @@ export const SettingsSchemas = {
     replyTo: z.string().email().nullable(),
     locale: z.literal("en-US"),
   }),
+  /**
+   * Thresholds for the rules that exclude an agreement from the numbers on a public profile (S10, F1–F5).
+   * They judge records, never people, so there is nothing here that attaches to an account.
+   */
+  fraud: z.object({
+    samePairAgreements: z.number().int().min(1).max(100),
+    dailyAgreements: z.number().int().min(1).max(1_000),
+    immediateConfirmations: z.number().int().min(2).max(100),
+    immediateSeconds: z.number().int().min(1).max(3_600),
+    newAccountDays: z.number().int().min(0).max(365),
+  }),
   feature_flags: z.object({
     AI_ENABLED: z.boolean(),
     ANCHOR_ENABLED: z.boolean(),

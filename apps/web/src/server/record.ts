@@ -236,6 +236,16 @@ export async function claimParty(userId: string, guest: GuestSession, requestId:
     if (row.creator_id === userId) throw new ProblemError(409, "Same account", "The creator's account cannot also be the counterparty.");
     if (row.user_id && row.user_id !== userId) throw new ProblemError(409, "Already linked", "This agreement is already linked to another account.");
     if (!row.user_id) {
+      // F1 at the other door. One mailbox can have two accounts, so matching account ids is not enough to know
+      // these are two people. Checked only here, on the path that actually links, so nothing else pays for it.
+      const mailboxes = await client.query<{ matches: boolean }>(`
+        SELECT creator.email_normalized_hash IS NOT NULL
+          AND creator.email_normalized_hash = claimant.email_normalized_hash AS matches
+        FROM users creator, users claimant WHERE creator.id = $1 AND claimant.id = $2
+      `, [row.creator_id, userId]);
+      if (mailboxes.rows[0]?.matches) {
+        throw new ProblemError(409, "Same person", "This agreement was created from the same email address, so it cannot be linked to this account.");
+      }
       await client.query("UPDATE parties SET user_id = $2 WHERE id = $1 AND user_id IS NULL", [guest.partyId, userId]);
       await writeAudit(client, { actorType: "USER", actorId: userId, action: "PARTY_ACCOUNT_LINKED", entityType: "party", entityId: guest.partyId, requestId, after: { agreementId: guest.agreementId } });
     }

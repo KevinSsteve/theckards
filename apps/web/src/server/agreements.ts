@@ -1,4 +1,4 @@
-import { canonicalJson, missingRequiredFields, renderAgreement, templateDefinitions, templateFieldErrors, transition, validateTemplateFields, type AgreementState, type TemplateId } from "@theckards/domain";
+import { canonicalJson, missingRequiredFields, normalizeEmail, renderAgreement, templateDefinitions, templateFieldErrors, transition, validateTemplateFields, type AgreementState, type TemplateId } from "@theckards/domain";
 import type pg from "pg";
 import { decryptText, encryptText, hmac, randomToken, sha256 } from "./crypto";
 import { getPool, inTransaction } from "./db";
@@ -233,8 +233,15 @@ export async function inviteCounterparty(input: {
   await requireLegal(input.userId);
   const email = input.email?.trim().toLowerCase() || null;
   if (email) {
-    const creator = await getPool().query<{ email_hash: string }>("SELECT email_hash FROM users WHERE id = $1", [input.userId]);
-    if (creator.rows[0]?.email_hash === hmac(email, "email")) throw new ProblemError(422, "Invalid counterparty", "The counterparty must use a different email address.");
+    // F1: both sides must be different people. Comparing the exact addresses was not enough, because an address
+    // tag or a dot is enough to make one mailbox look like two.
+    const creator = await getPool().query<{ email_hash: string; email_normalized_hash: string | null }>(
+      "SELECT email_hash, email_normalized_hash FROM users WHERE id = $1", [input.userId],
+    );
+    const row = creator.rows[0];
+    const sameExact = row?.email_hash === hmac(email, "email");
+    const sameNormalized = !!row?.email_normalized_hash && row.email_normalized_hash === hmac(normalizeEmail(email), "email");
+    if (sameExact || sameNormalized) throw new ProblemError(422, "Invalid counterparty", "The counterparty must use a different email address.");
   }
   const emailCiphertext = email ? await encryptText(email, "guest-email") : null;
   const token = randomToken();
@@ -253,16 +260,17 @@ export async function inviteCounterparty(input: {
     if (version.rows[0]?.render_status !== "READY") throw new ProblemError(409, "Preview pending", "Wait for the preview before inviting the counterparty.");
     const party = await client.query<{ id: string }>(`
       INSERT INTO parties(agreement_id, role, display_name, email_ciphertext, email_hash, invite_token_hash, invite_token_ciphertext,
-        invite_channel, invite_expires_at, invited_at)
-      VALUES ($1, 'COUNTERPARTY', $2, $3, $4, $5, $6, $7, $8, now())
+        invite_channel, invite_expires_at, invited_at, email_normalized_hash)
+      VALUES ($1, 'COUNTERPARTY', $2, $3, $4, $5, $6, $7, $8, now(), $9)
       ON CONFLICT (agreement_id, role) DO UPDATE SET display_name = EXCLUDED.display_name,
         email_ciphertext = EXCLUDED.email_ciphertext, email_hash = EXCLUDED.email_hash,
+        email_normalized_hash = EXCLUDED.email_normalized_hash,
         invite_token_hash = EXCLUDED.invite_token_hash, invite_token_ciphertext = EXCLUDED.invite_token_ciphertext,
         invite_channel = EXCLUDED.invite_channel, invite_expires_at = EXCLUDED.invite_expires_at, invited_at = now(),
         invite_consumed_at = NULL
       RETURNING id
     `, [input.agreementId, input.displayName, emailCiphertext, email ? hmac(email, "email") : null, hmac(token, "auth"),
-        encryptedToken, email ? "EMAIL" : "LINK", inviteExpiresAt]);
+        encryptedToken, email ? "EMAIL" : "LINK", inviteExpiresAt, email ? hmac(normalizeEmail(email), "email") : null]);
     await client.query("UPDATE agreements SET state = $2, lock_version = lock_version + 1, updated_at = now() WHERE id = $1", [input.agreementId, transition(current.state, "PENDING_SIGNATURES")]);
     if (email) {
       await client.query("INSERT INTO outbox(topic, payload) VALUES ('email.invite', $1::jsonb)", [JSON.stringify({ agreementId: input.agreementId, partyId: party.rows[0]!.id, tokenCiphertext: encryptedToken.toString("base64") })]);
