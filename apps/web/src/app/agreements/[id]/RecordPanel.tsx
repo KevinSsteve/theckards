@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "../../components/Button";
+import { sessionWatch } from "../../components/session-watch";
 
 interface Slot { kind: string; label: string; role: string; partyName: string; mine: boolean; declaredAt: string | null; note: string | null }
 interface Evidence {
@@ -35,11 +37,14 @@ export function RecordPanel({ id }: { id: string }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
+    if (sessionWatch().ended()) return;
     try {
       const [recordResponse, evidenceResponse] = await Promise.all([
         fetch(`/api/agreements/${id}/record`),
         fetch(`/api/agreements/${id}/evidence`),
       ]);
+      // The session-ended notice explains a 401; a second, vaguer message here would only compete with it.
+      if (!sessionWatch().check(recordResponse)) return;
       if (!recordResponse.ok) { setError("The record could not be loaded."); return; }
       setRecord(await recordResponse.json() as RecordView);
       if (evidenceResponse.ok) setEvidence(await evidenceResponse.json() as EvidenceList);
@@ -58,6 +63,7 @@ export function RecordPanel({ id }: { id: string }) {
         headers: { "content-type": "application/json", "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() },
         body: JSON.stringify({ filename: file.name, contentType: file.type, bytes: file.size, ...(fileNote.trim() ? { note: fileNote.trim() } : {}) }),
       });
+      if (!sessionWatch().check(created)) return;
       const data = await created.json().catch(() => ({})) as { id?: string; uploadUrl?: string; detail?: string };
       if (!created.ok || !data.uploadUrl || !data.id) { setError(data.detail ?? "The file was not accepted."); return; }
       setUploading("Uploading…");
@@ -90,6 +96,7 @@ export function RecordPanel({ id }: { id: string }) {
         headers: { "content-type": "application/json", "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() },
         body: JSON.stringify(body),
       });
+      if (!sessionWatch().check(response)) return false;
       const data = await response.json().catch(() => ({})) as { state?: string; detail?: string };
       if (!response.ok) { setError(data.detail ?? "The request failed."); return false; }
       if (data.state && record && data.state !== record.state) { window.location.reload(); return true; }
@@ -119,10 +126,10 @@ export function RecordPanel({ id }: { id: string }) {
             : slot.mine && record.canConfirm
               ? <span className="actions">
                   <input aria-label={`Optional note for ${slot.label}`} placeholder="Optional note (max 500)" maxLength={500} value={notes[slot.kind] ?? ""} onChange={(event) => setNotes({ ...notes, [slot.kind]: event.target.value })} style={{ maxWidth: 320 }} />
-                  <button disabled={busy} onClick={async () => {
+                  <Button busy={busy} onClick={async () => {
                     if (!window.confirm(`Declare “${slot.label}”? Declarations cannot be edited or removed.`)) return;
                     if (await post("confirmations", { kind: slot.kind, ...(notes[slot.kind]?.trim() ? { note: notes[slot.kind]!.trim() } : {}) })) setNotes({ ...notes, [slot.kind]: "" });
-                  }}>Declare</button>
+                  }}>Declare</Button>
                 </span>
               : <span className="muted">Waiting for {slot.partyName}. No confirmation recorded yet.</span>}
         </li>)}
@@ -137,7 +144,7 @@ export function RecordPanel({ id }: { id: string }) {
         <input id="evidence-file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
         <label htmlFor="evidence-note">Note (optional)</label>
         <input id="evidence-note" maxLength={500} value={fileNote} onChange={(event) => setFileNote(event.target.value)} placeholder="What does this file show?" />
-        <button disabled={!file || !!uploading}>{uploading || "Attach evidence"}</button>
+        <Button busy={!!uploading} disabled={!file}>{uploading || "Attach evidence"}</Button>
         {uploading && <p className="muted" aria-live="polite">{uploading}</p>}
       </form>}
       <ul className="slots">
@@ -158,12 +165,12 @@ export function RecordPanel({ id }: { id: string }) {
         if (await post(mode === "message" ? "messages" : "notes", { body: text })) setText("");
       }}>
         <div className="actions" role="radiogroup" aria-label="Entry type">
-          <label><input type="radio" style={{ width: "auto" }} checked={mode === "message"} onChange={() => setMode("message")} /> Message to the other party</label>
-          <label><input type="radio" style={{ width: "auto" }} checked={mode === "note"} onChange={() => setMode("note")} /> Note on the record</label>
+          <label><input type="radio" checked={mode === "message"} onChange={() => setMode("message")} /> Message to the other party</label>
+          <label><input type="radio" checked={mode === "note"} onChange={() => setMode("note")} /> Note on the record</label>
         </div>
         <textarea aria-label={mode === "message" ? "Message" : "Note"} maxLength={limit} value={text} onChange={(event) => setText(event.target.value)} />
         <p className="muted">{text.length}/{limit}. Messages and notes are permanent and visible to both parties. They are never public.</p>
-        <button disabled={busy || !text.trim()}>{busy ? "Saving…" : mode === "message" ? "Send message" : "Add note"}</button>
+        <Button busy={busy} disabled={!text.trim()}>{busy ? "Saving…" : mode === "message" ? "Send message" : "Add note"}</Button>
       </form>}
       {error && <p className="error" role="alert">{error}</p>}
       <ol className="timeline">

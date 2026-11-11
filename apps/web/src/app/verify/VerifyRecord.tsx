@@ -3,6 +3,7 @@
 import { sealMark } from "@theckards/domain";
 import { createSHA256 } from "hash-wasm";
 import { useState } from "react";
+import { Button } from "../components/Button";
 
 interface Verification {
   valid: boolean;
@@ -62,7 +63,10 @@ export function VerifyRecord({ expectedSeal }: { expectedSeal: string | null }) 
   return <section className="card">
     <h2>Choose what to verify</h2>
     <label htmlFor="verify-file">PDF file (stays on this device)</label>
-    <input id="verify-file" type="file" accept="application/pdf,.pdf" disabled={busy} onChange={async (event) => {
+    {/* Not `disabled` while hashing: that would drop focus to the page. The picker simply refuses to reopen. */}
+    <input id="verify-file" type="file" accept="application/pdf,.pdf" aria-disabled={busy || undefined}
+      onClick={(event) => { if (busy) event.preventDefault(); }} onChange={async (event) => {
+      if (busy) return;
       const file = event.target.files?.[0];
       if (!file) return;
       setBusy(true); setMessage("Computing SHA-256 locally…"); setResult(null);
@@ -77,8 +81,8 @@ export function VerifyRecord({ expectedSeal }: { expectedSeal: string | null }) 
     <p className="muted">or</p>
     <form onSubmit={(event) => { event.preventDefault(); void verify(digest); }}>
       <label htmlFor="verify-hash">SHA-256</label>
-      <input id="verify-hash" className="code" spellCheck={false} autoComplete="off" placeholder="64 hexadecimal characters" value={digest} disabled={busy} onChange={(event) => setDigest(event.target.value)} />
-      <button disabled={busy}>{busy ? "Checking…" : "Verify hash"}</button>
+      <input id="verify-hash" className="code" spellCheck={false} autoComplete="off" placeholder="64 hexadecimal characters" value={digest} readOnly={busy} onChange={(event) => setDigest(event.target.value)} />
+      <Button busy={busy}>{busy ? "Checking…" : "Verify hash"}</Button>
     </form>
     {message && <p className={message.includes("unavailable") || message.includes("could not") ? "error" : "muted"} role="status">{message}</p>}
     {result && sealMatches && <div className="notice" role="status">

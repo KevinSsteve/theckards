@@ -1,6 +1,6 @@
 import { VerifyRecord } from "./VerifyRecord";
 
-export const metadata = { title: "Verify a record · Theckards", description: "Check whether a PDF matches a Theckards integrity seal without uploading the file." };
+export const metadata = { title: "Verify a record", description: "Check whether a PDF matches a Theckards integrity seal without uploading the file." };
 
 export default async function VerifyPage({ searchParams }: { searchParams: Promise<{ seal?: string }> }) {
   const { seal } = await searchParams;

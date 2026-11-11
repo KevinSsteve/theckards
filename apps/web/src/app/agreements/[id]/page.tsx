@@ -2,12 +2,16 @@ import { redirect } from "next/navigation";
 import { getAgreement } from "../../../server/agreements";
 import { currentUserSession } from "../../../server/auth/current";
 import { userHasCurrentConsents } from "../../../server/legal";
+import { SessionEndedNotice } from "../../components/SessionEndedNotice";
 import { AgreementActions } from "./AgreementActions";
 import { CasePanel } from "./CasePanel";
 import { DossierPanel } from "./DossierPanel";
 import { RecordPanel } from "./RecordPanel";
 
 export const dynamic = "force-dynamic";
+// Deliberately not the agreement's own title: titles land in browser history and synced tabs, and an agreement
+// title often names the other person or the item.
+export const metadata = { title: "Agreement" };
 
 export default async function AgreementPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await currentUserSession();
@@ -19,6 +23,7 @@ export default async function AgreementPage({ params }: { params: Promise<{ id: 
   return <>
     <header className="topbar"><a className="brand" href="/dashboard">Theckards</a><span>{agreement.state.replaceAll("_", " ")}</span></header>
     <main className="shell narrow">
+      <SessionEndedNotice />
       <a href="/dashboard">← Agreements</a><h1>{agreement.title}</h1>
       <p className="muted">Version {agreement.currentVersionNumber} · record revision {agreement.lockVersion}</p>
       {agreement.sections.map((section) => <section className="card" key={section.heading}><h2>{section.heading}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</section>)}

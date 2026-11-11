@@ -5,7 +5,7 @@ import { loadInvite } from "../../../server/signing";
 import { GuestActions } from "./GuestActions";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Review agreement · Theckards", robots: { index: false, follow: false } };
+export const metadata = { title: "Review agreement", robots: { index: false, follow: false } };
 
 function Unavailable() {
   return <main className="shell narrow"><a className="brand" href="/">Theckards</a><h1>Link unavailable</h1>

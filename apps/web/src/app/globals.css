@@ -6,6 +6,9 @@
   --paper: #f8faf9;
   --accent: #126b4b;
   --danger: #9b2c2c;
+  /* Field borders identify where to type, so they need 3:1 against what surrounds them (WCAG 1.4.11).
+     #7d8a84 measures 3.60:1 on white, 3.43:1 on --paper and 3.40:1 on the notice background. */
+  --field-line: #7d8a84;
 }
 * { box-sizing: border-box; }
 body { margin: 0; color: var(--ink); background: #fff; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
@@ -14,6 +17,10 @@ button, .button { border: 0; border-radius: .5rem; background: var(--accent); co
 button.secondary, .button.secondary { background: white; border: 1px solid var(--line); color: var(--ink); }
 button.danger { background: var(--danger); }
 button:disabled { cursor: wait; opacity: .55; }
+/* Busy buttons stay focusable (components/Button.tsx), so they need their own look. */
+button[aria-disabled="true"] { cursor: progress; opacity: .55; }
+/* One focus ring everywhere, 6.2:1 or better against every background in this sheet (WCAG 2.4.7). */
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .shell { margin: 0 auto; max-width: 1120px; padding: 2rem 1.25rem 5rem; }
 .narrow { max-width: 760px; }
 .topbar { align-items: center; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; padding: 1rem 1.25rem; }
@@ -25,7 +32,13 @@ button:disabled { cursor: wait; opacity: .55; }
 .card { background: var(--paper); border: 1px solid var(--line); border-radius: .75rem; margin: 1rem 0; padding: 1.25rem; }
 .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
 label { display: block; font-weight: 650; margin: .75rem 0 .35rem; }
-input, textarea, select { background: white; border: 1px solid #aab6b0; border-radius: .4rem; color: var(--ink); font: inherit; padding: .65rem; width: 100%; }
+input, textarea, select { background: white; border: 1px solid var(--field-line); border-radius: .4rem; color: var(--ink); font: inherit; padding: .65rem; width: 100%; }
+/* The consent box on every signing form. 20 px instead of the browser's 13, inside a label that is itself the
+   click target, so it is easy to hit on a phone. */
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); height: 1.25rem; margin: 0 .5rem 0 0; padding: 0; vertical-align: -.25rem; width: 1.25rem; }
+/* Seal ids and SHA-256 values are unbroken 36- and 64-character strings. Without this they pushed /verify
+   to 527 px wide on a 320 px screen (WCAG 1.4.10). */
+code { overflow-wrap: anywhere; }
 textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; min-height: 220px; }
 .muted { color: var(--muted); }
 .notice { border-left: 4px solid #be7a11; padding: .75rem 1rem; background: #fff8e8; }

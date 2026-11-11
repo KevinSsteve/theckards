@@ -7,7 +7,7 @@ import { LogoutButton } from "../components/LogoutButton";
 import { AdminDashboard } from "./AdminDashboard";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Admin · Theckards", robots: { index: false, follow: false } };
+export const metadata = { title: "Admin", robots: { index: false, follow: false } };
 
 export default async function AdminPage() {
   const session = await currentAdminSession();

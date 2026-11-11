@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { TemplateDefinition, TemplateId } from "@theckards/domain";
+import { Button } from "../../components/Button";
 
 function csrf(): string {
   const part = document.cookie.split("; ").find((item) => item.startsWith("__Host-theckards_csrf="));
@@ -43,6 +44,6 @@ export function NewAgreementForm({ templates }: { templates: TemplateDefinition[
     </div>)}
     <p className="notice">Review every field before signing. Theckards does not provide legal advice or handle payment between parties.</p>
     {error && <p className="error" role="alert">{error}</p>}
-    <button disabled={busy}>{busy ? "Creating preview…" : "Create preview"}</button>
+    <Button busy={busy}>{busy ? "Creating preview…" : "Create preview"}</Button>
   </form>;
 }

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { legalDocumentApprovalBlockers, type LegalDocumentType } from "@theckards/domain";
+import { Button } from "../components/Button";
 
 interface Setting {
   key: string;
@@ -34,10 +35,10 @@ function SettingCard({ initial, editable }: { initial: Setting; editable: boolea
   const [busy, setBusy] = useState(false);
   return <article className="card" id={`setting-${setting.key}`}>
     <h2>{setting.title}</h2><p className="muted">{setting.description}</p>
-    <textarea className="code" aria-label={`${setting.title} JSON`} value={text} disabled={!editable || busy} onChange={(event) => setText(event.target.value)} />
+    <textarea className="code" aria-label={`${setting.title} JSON`} value={text} disabled={!editable} readOnly={busy} onChange={(event) => setText(event.target.value)} />
     <p className="muted">Version {setting.version}</p>
     {message && <p className={message.startsWith("Saved") ? "success" : "error"} role="status">{message}</p>}
-    <button disabled={!editable || busy} onClick={async () => {
+    <Button busy={busy} disabled={!editable} onClick={async () => {
       setMessage(""); setBusy(true);
       let value: unknown;
       try { value = JSON.parse(text); } catch { setMessage("Invalid JSON."); setBusy(false); return; }
@@ -49,7 +50,7 @@ function SettingCard({ initial, editable }: { initial: Setting; editable: boolea
       const body = await response.json() as { setting?: Setting; detail?: string };
       if (!response.ok || !body.setting) { setMessage(body.detail ?? "Update failed."); setBusy(false); return; }
       setSetting({ ...setting, ...body.setting }); setText(JSON.stringify(body.setting.value, null, 2)); setMessage(`Saved as version ${body.setting.version}.`); setBusy(false);
-    }}>Save setting</button>
+    }}>Save setting</Button>
   </article>;
 }
 
@@ -121,16 +122,16 @@ function LegalCard({ initial, editable }: { initial: LegalDocument; editable: bo
   const needsReauthentication = message?.kind === "error" && /sign in again|reauthentication/i.test(message.text);
   return <article className="card" id={`legal-${document.documentType.toLowerCase()}-v${document.version}`}>
     <div className="actions"><strong>{document.documentType}</strong><span className="muted">v{document.version} · {document.status}</span></div>
-    <label>Title<input value={title} disabled={!editable || !isDraft || busy} onChange={(event) => setTitle(event.target.value)} /></label>
-    <label>Markdown<textarea value={bodyMd} disabled={!editable || !isDraft || busy} onChange={(event) => setBodyMd(event.target.value)} /></label>
+    <label>Title<input value={title} disabled={!editable || !isDraft} readOnly={busy} onChange={(event) => setTitle(event.target.value)} /></label>
+    <label>Markdown<textarea value={bodyMd} disabled={!editable || !isDraft} readOnly={busy} onChange={(event) => setBodyMd(event.target.value)} /></label>
     {message && <p role="status" className={message.kind}>{message.text}</p>}
     {needsReauthentication && <p><a className="button secondary" href="/api/auth/login?intent=admin&fresh=1">Sign in again to approve</a></p>}
     {!editable && isDraft && <p className="notice">Only the product owner can edit and approve this draft.</p>}
     {dirty && isDraft && <p className="muted">You have unsaved changes. Save the draft before approval.</p>}
     {blockers.length > 0 && <div className="notice"><strong>Complete before approving:</strong><ul>{blockers.map((b) => <li key={b}>{b}</li>)}</ul><span className="muted">Edit the text above, save the draft, then approve.</span></div>}
     {isDraft
-      ? <div className="actions"><button className="secondary" disabled={!editable || busy || !dirty} onClick={save}>Save draft</button><button disabled={!editable || busy || dirty || blockers.length > 0} onClick={approve}>Approve</button></div>
-      : <button className="secondary" disabled={!editable || busy} onClick={async () => {
+      ? <div className="actions"><Button className="secondary" busy={busy} disabled={!editable || !dirty} onClick={save}>Save draft</Button><Button busy={busy} disabled={!editable || dirty || blockers.length > 0} onClick={approve}>Approve</Button></div>
+      : <Button className="secondary" busy={busy} disabled={!editable} onClick={async () => {
           setBusy(true); setMessage(null);
           try {
             const response = await fetch("/api/admin/legal", { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ documentType: document.documentType, locale: document.locale, title, bodyMd }) });
@@ -141,7 +142,7 @@ function LegalCard({ initial, editable }: { initial: LegalDocument; editable: bo
           } finally {
             setBusy(false);
           }
-        }}>Create next draft</button>}
+        }}>Create next draft</Button>}
   </article>;
 }
 

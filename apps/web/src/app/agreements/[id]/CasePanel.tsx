@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "../../components/Button";
+import { sessionWatch } from "../../components/session-watch";
 
 interface Section { heading: string; paragraphs: string[] }
 interface Proposal { id: string; author: string; mine: boolean; body: string; createdAt: string; current: boolean; accepted: boolean; canAccept: boolean }
@@ -31,9 +33,10 @@ export function CasePanel({ id }: { id: string }) {
   const [showOpen, setShowOpen] = useState(false);
 
   const load = useCallback(async () => {
+    if (sessionWatch().ended()) return;
     try {
       const response = await fetch(`/api/agreements/${id}/case`);
-      if (response.ok) setView(await response.json() as CaseView);
+      if (sessionWatch().check(response) && response.ok) setView(await response.json() as CaseView);
     } catch { /* retried by the interval */ }
   }, [id]);
 
@@ -51,6 +54,7 @@ export function CasePanel({ id }: { id: string }) {
         headers: { ...(body ? { "content-type": "application/json" } : {}), "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() },
         body: body ? JSON.stringify(body) : undefined,
       });
+      if (!sessionWatch().check(response)) return false;
       const data = await response.json().catch(() => ({})) as { state?: string; detail?: string };
       if (!response.ok) { setError(data.detail ?? "The request failed."); return false; }
       if (data.state && view && data.state !== view.agreementState) { window.location.reload(); return true; }
@@ -78,7 +82,7 @@ export function CasePanel({ id }: { id: string }) {
       ? <form onSubmit={async (event) => { event.preventDefault(); if (window.confirm("Open a case? The agreement terms stay frozen while it is open.") && await post("", { reason })) setReason(""); }}>
           <label htmlFor="case-reason">What is not going as agreed? (facts only)</label>
           <textarea id="case-reason" minLength={3} maxLength={2000} required value={reason} onChange={(event) => setReason(event.target.value)} />
-          <div className="actions"><button disabled={busy || reason.trim().length < 3}>Open case</button><button type="button" className="secondary" onClick={() => setShowOpen(false)}>Cancel</button></div>
+          <div className="actions"><Button busy={busy} disabled={reason.trim().length < 3}>Open case</Button><button type="button" className="secondary" onClick={() => setShowOpen(false)}>Cancel</button></div>
         </form>
       : <button type="button" className="secondary" onClick={() => setShowOpen(true)}>Open a case</button>)}
     {c && c.status === "WITHDRAWN" && !showCase && <p className="muted">The last case was withdrawn on {c.closedAt ? date(c.closedAt) : ""}.</p>}
@@ -94,15 +98,15 @@ export function CasePanel({ id }: { id: string }) {
         {c.proposals.map((p) => <li key={p.id}>
           <span className="muted">{date(p.createdAt)} · {p.author}{p.mine ? " (you)" : ""}{p.current ? "" : " · replaced by a newer proposal"}{p.accepted ? " · accepted" : ""}</span>
           <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", opacity: p.current ? 1 : 0.6 }}>{p.body}</div>
-          {p.canAccept && <button disabled={busy} onClick={async () => {
+          {p.canAccept && <Button busy={busy} onClick={async () => {
             if (window.confirm(`Accept this proposal from ${p.author}? A resolution addendum with exactly this text will be prepared for both of you to sign.`)) await post(`/proposals/${p.id}/accept`);
-          }}>Accept this proposal</button>}
+          }}>Accept this proposal</Button>}
         </li>)}
       </ol>
       {c.canPropose && <form onSubmit={async (event) => { event.preventDefault(); if (await post("/proposals", { body: proposal })) setProposal(""); }}>
         <label htmlFor="proposal">Your proposal (replaces your previous one)</label>
         <textarea id="proposal" minLength={3} maxLength={4000} value={proposal} onChange={(event) => setProposal(event.target.value)} />
-        <button disabled={busy || proposal.trim().length < 3}>Send proposal</button>
+        <Button busy={busy} disabled={proposal.trim().length < 3}>Send proposal</Button>
       </form>}
 
       {c.addendum && <div className="card">
@@ -114,17 +118,17 @@ export function CasePanel({ id }: { id: string }) {
         {c.addendum.canSign && <form onSubmit={async (event) => { event.preventDefault(); await post("/addendum/sign", { typedName, consent: true }); }}>
           <label htmlFor="addendum-name">Full name (typed signature)</label>
           <input id="addendum-name" autoComplete="name" minLength={3} maxLength={120} value={typedName} onChange={(event) => setTypedName(event.target.value)} />
-          <label><input type="checkbox" style={{ width: "auto", marginRight: ".5rem" }} checked={consent} onChange={(event) => setConsent(event.target.checked)} />
+          <label><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
             I agree to sign this addendum electronically under the <a href="/legal/esign" target="_blank">Electronic Signature Consent</a>.</label>
-          <button disabled={busy || !consent || typedName.trim().length < 3}>Sign addendum</button>
+          <Button busy={busy} disabled={!consent || typedName.trim().length < 3}>Sign addendum</Button>
         </form>}
         {c.addendum.status === "SEALED" && <p className="actions"><a className="button" href={`/api/agreements/${id}/documents/addendum`}>Download sealed addendum</a><span className="muted">Seal ID {c.addendum.sealedDocumentId}</span></p>}
         {c.status === "OPEN" && c.addendum.signatures.length >= 2 && c.addendum.status !== "SEALED" && <p className="muted" aria-live="polite">Both parties signed. The addendum is being sealed…</p>}
       </div>}
 
-      {c.canWithdraw && <p><button className="danger" disabled={busy} onClick={async () => {
+      {c.canWithdraw && <p><Button className="danger" busy={busy} onClick={async () => {
         if (window.confirm("Withdraw the case? The agreement returns to its signed state; the case history stays on the record.")) await post("/withdraw");
-      }}>Withdraw case</button></p>}
+      }}>Withdraw case</Button></p>}
     </>}
   </section>;
 }

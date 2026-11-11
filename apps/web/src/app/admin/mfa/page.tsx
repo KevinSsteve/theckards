@@ -4,7 +4,7 @@ import { requirePendingAdmin } from "../../../server/auth/session-store";
 import { MfaSetup } from "./MfaSetup";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Set up MFA · Theckards Admin", robots: { index: false, follow: false } };
+export const metadata = { title: "Set up MFA", robots: { index: false, follow: false } };
 
 export default async function AdminMfaPage() {
   const session = await currentUserSession();

@@ -6,7 +6,7 @@ import { finalDocumentFor } from "../../../server/signing";
 import { InPersonSigner } from "./InPersonSigner";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Sign in person · Theckards", robots: { index: false, follow: false }, referrer: "no-referrer" };
+export const metadata = { title: "Sign in person", robots: { index: false, follow: false }, referrer: "no-referrer" };
 
 function Unavailable() {
   return <main className="shell narrow"><a className="brand" href="/">Theckards</a><h1>QR code unavailable</h1>

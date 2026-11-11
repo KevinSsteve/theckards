@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "../../components/Button";
+import { sessionWatch } from "../../components/session-watch";
 
 interface Dossier {
   id: string;
@@ -29,9 +31,10 @@ export function DossierPanel({ id }: { id: string }) {
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
+    if (sessionWatch().ended()) return;
     try {
       const response = await fetch(`/api/agreements/${id}/dossier`);
-      if (response.ok) setView(await response.json() as DossierList);
+      if (sessionWatch().check(response) && response.ok) setView(await response.json() as DossierList);
     } catch { /* retried by the interval */ }
   }, [id]);
 
@@ -48,6 +51,7 @@ export function DossierPanel({ id }: { id: string }) {
         method: "POST",
         headers: { "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() },
       });
+      if (!sessionWatch().check(response)) return;
       const data = await response.json().catch(() => ({})) as { detail?: string };
       if (!response.ok) setError(data.detail ?? "The dossier could not be requested.");
       await load();
@@ -71,9 +75,9 @@ export function DossierPanel({ id }: { id: string }) {
     {!view.legalReady && <p className="notice">The dossier opens once the updated Privacy Policy is approved, because the archive includes evidence files.</p>}
     {error && <p className="error" role="alert">{error}</p>}
 
-    {view.canRequest && <p><button type="button" disabled={busy} onClick={() => { void request(); }}>
+    {view.canRequest && <p><Button type="button" busy={busy} onClick={() => { void request(); }}>
       {busy ? "Requesting…" : view.items.length > 0 ? "Build a new dossier" : "Build the dossier"}
-    </button></p>}
+    </Button></p>}
     {building && <p className="muted" aria-live="polite">The archive is being built and sealed…</p>}
 
     {view.items.length === 0 && !building && <p className="muted">No dossier has been built yet.</p>}

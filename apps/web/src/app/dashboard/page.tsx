@@ -5,6 +5,7 @@ import { userHasCurrentConsents } from "../../server/legal";
 import { LogoutButton } from "../components/LogoutButton";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Agreements" };
 
 export default async function DashboardPage() {
   const session = await currentUserSession();

@@ -4,6 +4,7 @@ import { userHasCurrentConsents } from "../../server/legal";
 import { LogoutButton } from "../components/LogoutButton";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Account" };
 
 export default async function AccountPage() {
   const session = await currentUserSession();

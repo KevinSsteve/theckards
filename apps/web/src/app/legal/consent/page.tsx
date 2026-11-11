@@ -5,6 +5,7 @@ import { ConsentForm } from "./ConsentForm";
 import { LegalText } from "../../components/LegalText";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Review the legal documents" };
 
 /** Only internal, fixed-shape destinations (no open redirect). */
 function safeNext(value: string | undefined): string {

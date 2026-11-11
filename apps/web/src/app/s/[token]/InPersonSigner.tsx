@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "../../components/Button";
 
 type View =
   | { status: "OPEN"; expiresAt: string }
@@ -88,7 +89,7 @@ export function InPersonSigner({ token, initial, hasDownloadSession }: { token: 
         <p className="actions"><a className="button" href="/api/guest/documents/final">Download sealed PDF</a><a className="button secondary" href="/api/guest/documents/final/receipt">Download receipt</a></p>
         <p className="muted">Save it now: without an account you can download it only on this device, for about 2 hours. Anyone can later check that a copy is unchanged on the verification page.</p>
       </>}
-      {view.sealed && !downloadable && view.downloadReady && <button type="button" disabled={busy} onClick={() => { void claimDownload(); }}>Get the sealed PDF</button>}
+      {view.sealed && !downloadable && view.downloadReady && <Button type="button" busy={busy} onClick={() => { void claimDownload(); }}>Get the sealed PDF</Button>}
       {view.sealed && !downloadable && !view.downloadReady && <p className="muted">The download was already opened on this device. Ask the other party for a copy.</p>}
       {accountLinkState(view, downloadable) !== "hidden" && <div className="notice">
         <strong>Keep access to this agreement</strong>
@@ -97,7 +98,7 @@ export function InPersonSigner({ token, initial, hasDownloadSession }: { token: 
           messages with the other party and sign a resolution if one is ever needed.
         </p>
         <p className="muted">Do it on this phone, within about 2 hours of signing. After that this agreement can no longer be linked to an account.</p>
-        <button type="button" disabled={busy} onClick={() => { void keepAccess(); }}>Keep access with an account</button>
+        <Button type="button" busy={busy} onClick={() => { void keepAccess(); }}>Keep access with an account</Button>
       </div>}
       {message && <p className="error" role="alert">{message}</p>}
     </section>;
@@ -107,7 +108,7 @@ export function InPersonSigner({ token, initial, hasDownloadSession }: { token: 
       <h2>Show this code to the other party</h2>
       <p style={{ fontSize: "2.75rem", fontWeight: 750, letterSpacing: ".35em", fontVariantNumeric: "tabular-nums", margin: "1rem 0" }}>{code}</p>
       <p>They type it on their screen to confirm your signature. Expires {new Date(view.expiresAt).toLocaleTimeString()}.</p>
-      <button type="button" className="secondary" disabled={busy} onClick={() => requestCode(typedName)}>Show a new code</button>
+      <Button type="button" className="secondary" busy={busy} onClick={() => { void requestCode(typedName); }}>Show a new code</Button>
       {message && <p className="error" role="alert">{message}</p>}
     </section>;
   }
@@ -117,10 +118,10 @@ export function InPersonSigner({ token, initial, hasDownloadSession }: { token: 
     {view.status === "AWAITING_CONFIRMATION" && <p className="muted">You already signed on this device. Sign again to show a new code.</p>}
     <label htmlFor="typed-name">Your full name (typed signature)</label>
     <input id="typed-name" autoComplete="name" required minLength={3} maxLength={120} value={typedName} onChange={(event) => setTypedName(event.target.value)} />
-    <label><input style={{ width: "auto", marginRight: ".5rem" }} type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
+    <label><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
       I agree to sign electronically under the <a href="/legal/esign" target="_blank">Electronic Signature Consent</a>, and I accept the <a href="/legal/terms" target="_blank">Terms</a> and <a href="/legal/privacy" target="_blank">Privacy Policy</a>.</label>
     <p className="muted">After you sign, a code appears here. The other party types it on their device to confirm.</p>
-    <button disabled={busy || !consent || typedName.trim().length < 3}>{busy ? "Signing…" : "Sign"}</button>
+    <Button busy={busy} disabled={!consent || typedName.trim().length < 3}>{busy ? "Signing…" : "Sign"}</Button>
     {message && <p className="error" role="alert">{message}</p>}
   </form>;
 }

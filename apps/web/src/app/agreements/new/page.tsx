@@ -5,6 +5,7 @@ import { userHasCurrentConsents } from "../../../server/legal";
 import { NewAgreementForm } from "./NewAgreementForm";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "New agreement" };
 
 export default async function NewAgreementPage() {
   const session = await currentUserSession();

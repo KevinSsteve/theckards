@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "../components/Button";
 
 function csrf(): string {
   const part = document.cookie.split("; ").find((item) => item.startsWith("__Host-theckards_csrf="));
@@ -11,7 +12,7 @@ export function ClaimButton() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   return <>
-    <button disabled={busy} onClick={async () => {
+    <Button busy={busy} onClick={async () => {
       setBusy(true); setMessage("");
       try {
         const response = await fetch("/api/claim", { method: "POST", headers: { "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID() } });
@@ -23,7 +24,7 @@ export function ClaimButton() {
       } finally {
         setBusy(false);
       }
-    }}>{busy ? "Linking…" : "Link to my account"}</button>
+    }}>{busy ? "Linking…" : "Link to my account"}</Button>
     {message && <p className="error" role="alert">{message}</p>}
   </>;
 }

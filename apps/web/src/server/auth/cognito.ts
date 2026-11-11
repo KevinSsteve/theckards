@@ -7,7 +7,16 @@ import { randomToken, signPayload, verifySignedPayload } from "../crypto";
 export type AuthIntent = "user" | "admin";
 /** Post-login destinations are a fixed allowlist (no open redirects). */
 export const POST_LOGIN_PATHS = ["/account", "/claim"] as const;
-export type PostLoginPath = (typeof POST_LOGIN_PATHS)[number];
+/**
+ * Plus one shape: a single agreement page, so someone whose session ended on that page comes back to it. Only a
+ * lowercase UUID path segment matches, so nothing that resolves to another origin or path can pass.
+ */
+const AGREEMENT_PAGE = /^\/agreements\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export type PostLoginPath = (typeof POST_LOGIN_PATHS)[number] | `/agreements/${string}`;
+
+export function isPostLoginPath(value: unknown): value is PostLoginPath {
+  return typeof value === "string" && ((POST_LOGIN_PATHS as readonly string[]).includes(value) || AGREEMENT_PAGE.test(value));
+}
 
 export interface AuthTransaction {
   state: string;
@@ -70,7 +79,7 @@ export function readAuthTransaction(value: string | undefined): AuthTransaction 
   const transaction = verifySignedPayload<AuthTransaction>(value);
   if (!transaction || Date.now() - transaction.createdAt > 10 * 60_000) return null;
   if (!(["user", "admin"] as const).includes(transaction.intent)) return null;
-  if (transaction.next !== undefined && !POST_LOGIN_PATHS.includes(transaction.next)) return null;
+  if (transaction.next !== undefined && !isPostLoginPath(transaction.next)) return null;
   return transaction;
 }
 

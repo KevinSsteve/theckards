@@ -1,4 +1,4 @@
-export const metadata = { title: "How to verify offline · Theckards" };
+export const metadata = { title: "How to verify offline" };
 
 export default function HowToVerifyPage() {
   return <>

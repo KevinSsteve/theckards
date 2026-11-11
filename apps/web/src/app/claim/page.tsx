@@ -7,7 +7,7 @@ import { claimPreview } from "../../server/record";
 import { ClaimButton } from "./ClaimButton";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Keep access · Theckards", robots: { index: false, follow: false } };
+export const metadata = { title: "Keep access", robots: { index: false, follow: false } };
 
 export default async function ClaimPage() {
   const session = await currentUserSession();

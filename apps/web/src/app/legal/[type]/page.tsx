@@ -6,6 +6,19 @@ export const dynamic = "force-dynamic";
 
 const TYPES = { terms: "TERMS", privacy: "PRIVACY", esign: "ESIGN", notice: "NOTICE" } as const;
 
+/** Fixed names, not the stored titles, so the title needs no database read and a draft can never set it. */
+const TITLES: Record<keyof typeof TYPES, string> = {
+  terms: "Terms of Service",
+  privacy: "Privacy Policy",
+  esign: "Electronic Records and Signature Consent",
+  notice: "Important Notice",
+};
+
+export async function generateMetadata({ params }: { params: Promise<{ type: string }> }) {
+  const { type } = await params;
+  return { title: TITLES[type as keyof typeof TYPES] ?? "Legal" };
+}
+
 export default async function LegalDocumentPage({ params }: { params: Promise<{ type: string }> }) {
   const { type } = await params;
   const documentType = TYPES[type as keyof typeof TYPES];

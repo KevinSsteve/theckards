@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "../../components/Button";
+import { sessionWatch } from "../../components/session-watch";
 
 function csrf(): string {
   const part = document.cookie.split("; ").find((item) => item.startsWith("__Host-theckards_csrf="));
@@ -13,6 +15,7 @@ async function post(url: string, body?: unknown, extra: Record<string, string> =
     headers: { ...(body ? { "content-type": "application/json" } : {}), "x-csrf-token": csrf(), "idempotency-key": crypto.randomUUID(), ...extra },
     body: body ? JSON.stringify(body) : undefined,
   });
+  sessionWatch().check(response);
   const data = await response.json().catch(() => ({})) as Record<string, unknown>;
   return { ok: response.ok, data };
 }
@@ -64,13 +67,13 @@ export function AgreementActions(props: AgreementActionsProps) {
       {renderStatus === "FAILED" && <p className="error">Preview generation failed. Support has been notified.</p>}
       {renderStatus === "READY" && <a className="button secondary" href={`/api/agreements/${id}/preview`} target="_blank">Open PDF preview</a>}
       {creator && state === "REVISION_REQUESTED" && <p className="notice">Changes were requested. Edit the terms to create a new version, then sign again.</p>}
-      {creator && ["DRAFT", "PENDING_SIGNATURES", "REVISION_REQUESTED"].includes(state) && <p><button className="danger" disabled={busy} onClick={async () => {
+      {creator && ["DRAFT", "PENDING_SIGNATURES", "REVISION_REQUESTED"].includes(state) && <p><Button className="danger" busy={busy} onClick={async () => {
         if (!window.confirm("Cancel this agreement?")) return;
         setBusy(true); setMessage("");
         const result = await post(`/api/agreements/${id}/cancel`, undefined, { "if-match": `"${lockVersion}"` });
         if (!result.ok) { setMessage(detail(result.data, "Action failed.")); setBusy(false); return; }
         window.location.reload();
-      }}>Cancel agreement</button></p>}
+      }}>Cancel agreement</Button></p>}
       {message && <p className="error" role="alert">{message}</p>}
     </section>
   </>;
@@ -92,9 +95,9 @@ function CreatorSignForm({ id, lockVersion }: { id: string; lockVersion: number 
     <p className="notice">Review before signing. Not legal advice. Theckards records your electronic signature from your signed-in account; it does not verify identity or guarantee payment.</p>
     <label htmlFor="typed-name">Full name (typed signature)</label>
     <input id="typed-name" autoComplete="name" required minLength={3} maxLength={120} value={typedName} onChange={(event) => setTypedName(event.target.value)} />
-    <label><input style={{ width: "auto", marginRight: ".5rem" }} type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
+    <label><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
       I agree to sign electronically under the <a href="/legal/esign" target="_blank">Electronic Signature Consent</a>, and I accept the <a href="/legal/terms" target="_blank">Terms</a> and <a href="/legal/privacy" target="_blank">Privacy Policy</a>.</label>
-    <button disabled={busy || !consent || typedName.trim().length < 3}>{busy ? "Signing…" : "Sign"}</button>
+    <Button busy={busy} disabled={!consent || typedName.trim().length < 3}>{busy ? "Signing…" : "Sign"}</Button>
     {message && <p className="error" role="alert">{message}</p>}
   </form>;
 }
@@ -109,8 +112,9 @@ function InPersonPanel({ id, lockVersion }: { id: string; lockVersion: number })
   const [message, setMessage] = useState("");
 
   const refresh = useCallback(async () => {
+    if (sessionWatch().ended()) return;
     const response = await fetch(`/api/agreements/${id}/in-person`);
-    if (!response.ok) return;
+    if (!sessionWatch().check(response) || !response.ok) return;
     const next = await response.json() as CreatorView;
     setView(next);
     if (next.agreementState === "EXECUTED") window.location.reload();
@@ -140,7 +144,7 @@ function InPersonPanel({ id, lockVersion }: { id: string; lockVersion: number })
     <h2>2. Sign with the other party, in person</h2>
     {!qr && !awaiting && !ended && <>
       <p>With the other party next to you, show them a QR code. They scan it with their phone camera, review the agreement and sign on their own phone. Their phone then shows a 6-digit code that you type here.</p>
-      <button type="button" disabled={busy} onClick={start}>Show QR code</button>
+      <Button type="button" busy={busy} onClick={start}>Show QR code</Button>
     </>}
     {qr && !awaiting && !ended && <>
       <p>Ask the other party to scan this code with their phone camera.</p>
@@ -159,9 +163,9 @@ function InPersonPanel({ id, lockVersion }: { id: string; lockVersion: number })
       <label htmlFor="confirm-code">Type the 6-digit code shown on their screen</label>
       <input id="confirm-code" inputMode="numeric" autoComplete="off" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} style={{ fontSize: "1.5rem", letterSpacing: ".3em", maxWidth: 220 }} />
       <p className="muted">Only confirm if the person in front of you is the one who signed. {view?.attemptsLeft} attempt(s) left.</p>
-      <button disabled={busy || code.length !== 6}>{busy ? "Confirming…" : "Confirm signature"}</button>
+      <Button busy={busy} disabled={code.length !== 6}>{busy ? "Confirming…" : "Confirm signature"}</Button>
     </form>}
-    {ended && <><p>{view?.status === "EXPIRED" ? "The code expired." : "This QR code is no longer valid."}</p><button type="button" disabled={busy} onClick={start}>Show a new QR code</button></>}
+    {ended && <><p>{view?.status === "EXPIRED" ? "The code expired." : "This QR code is no longer valid."}</p><Button type="button" busy={busy} onClick={start}>Show a new QR code</Button></>}
     {message && <p className="error" role="alert">{message}</p>}
   </section>;
 }
