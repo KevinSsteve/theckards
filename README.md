@@ -57,14 +57,27 @@ pnpm lint && pnpm -r typecheck && pnpm test
 
 ## Deploy
 
-Images are built by CodeBuild (`buildspec.yml`) and deployed with CDK by image tag. The mail-forwarding target is personal data and is not stored in git. Each deploy reads it from SSM:
+Two steps, always in this order: build the image for a pushed commit, then deploy that tag.
 
 ```sh
-export THECKARDS_MAIL_FORWARD_TO=$(aws ssm get-parameter --name /theckards/prod/mail-forward-to --query Parameter.Value --output text)
-cd infra && npx cdk deploy Theckards-prod -c imageTag=<tag> -c useAppDbCredentials=true
+# 1. Build. CodeBuild (buildspec.yml) builds both images; Dockerfile.web runs lint, typecheck and tests first.
+TAG=$(git rev-parse --short HEAD)
+git archive --format=zip --output=/tmp/source.zip HEAD
+aws s3 cp /tmp/source.zip s3://theckards-build-src-116708768297-us-east-1/source.zip
+aws codebuild start-build --project-name theckards-image-build \
+  --environment-variables-override name=IMAGE_TAG,value=$TAG,type=PLAINTEXT
+
+# 2. Deploy, once the build has succeeded.
+scripts/deploy-prod.sh $TAG --dry-run   # every check, no changes
+scripts/deploy-prod.sh $TAG
 ```
 
-Migrations run as a one-off ECS task. See [`docs/runbooks/migration-failure.md`](docs/runbooks/migration-failure.md).
+[`scripts/deploy-prod.sh`](scripts/deploy-prod.sh) refuses before changing anything unless the commit is on
+`origin/main`, no stack update is running, both images exist with clean scans, and CI passed. It then runs the
+database migration with the new image while the current release still serves traffic, deploys the stack, and
+confirms both services run the new image. The mail-forwarding target is personal data: the script reads it from
+SSM and removes it from the deploy log. If a deploy hangs, see
+[`docs/runbooks/deploy-stuck.md`](docs/runbooks/deploy-stuck.md).
 
 ## Verify a record
 

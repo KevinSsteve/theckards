@@ -27,7 +27,7 @@ vi.mock("./crypto", () => ({ sha256: (value: string) => value.slice(0, 64), rand
 const { dossierArtifact, listDossiers, requestDossier } = await import("./dossier");
 
 const A = "11111111-1111-1111-1111-111111111111";
-const ask = { userId: "u-creator", agreementId: A, idempotencyKey: "key-12345678" };
+const ask = { userId: "u-creator", agreementId: A, idempotencyKey: "key-12345678" }; // gitleaks:allow (test fixture, not a credential)
 const memberRow = (state = "EXECUTED", partyId = "p-creator") =>
   ({ id: A, state, template_id: "purchase_sale", due_at: null, version_id: "v1", fields: {}, party_id: partyId, party_role: "CREATOR" });
 const readyArtifact = {

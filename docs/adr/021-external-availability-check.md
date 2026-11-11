@@ -28,10 +28,26 @@ CloudWatch Synthetics canaries are **not** adopted now.
 
 ## Fixed monthly cost
 
-Expected **US$0**. Route 53 allows a number of health checks against AWS endpoints at no charge, and the endpoint
-here is a CloudFront distribution. The pricing page's health-check figures are not exposed through the Pricing
-API, so this is the one number in our ADRs taken from documentation rather than measured; the worst case if it is
-billed as a non-AWS endpoint is about US$0.75 per month. Confirm on the first bill.
+**US$1.00 to US$2.75 per month**, verified with the AWS Pricing API on 2026-11-11. A first draft of this ADR said
+US$0; that was wrong, because HTTPS is a billed optional feature.
+
+| Usage type | Price |
+| --- | --- |
+| `Health-Check-AWS` | First 50 health checks of AWS endpoints free, then $0.50 per month |
+| `Health-Check-Non-AWS` | $0.75 per month |
+| `Health-Check-Option-AWS` | $1.00 per month per optional feature |
+| `Health-Check-Option-Non-AWS` | $2.00 per month per optional feature |
+
+This check uses exactly one optional feature, HTTPS, with no string matching, no fast interval and no latency
+measurement. If Route 53 classes the CloudFront endpoint as an AWS endpoint the total is $1.00, otherwise $2.75.
+The first bill will say which. Route 53 is covered by AWS Activate credits; only domain registration and transfer
+are excluded.
+
+HTTPS is not optional in practice. Route 53 treats any 2xx **or 3xx** response as healthy, and CloudFront answers
+plain HTTP with a `301` redirect without ever contacting the origin (verified: `http://…/healthz` returns `301`).
+An HTTP check would therefore stay green with the application completely down. `/healthz` also returns
+`Cache-Control: no-store` and every probe is a CloudFront cache miss (verified), so each check really reaches the
+origin rather than a cached answer.
 
 ## Alternative considered and rejected: CloudWatch Synthetics
 
@@ -50,7 +66,7 @@ stops testing production.
 
 So the browser flow is deferred until there is a staging environment to run it against, or real traffic whose
 absence would itself be the signal. Until then, reachability is the thing worth knowing, and a health check
-answers it for a twentieth of the price.
+answers it for between a tenth and a quarter of the price.
 
 ## Alternative considered and rejected: changing the existing alarms to `breaching`
 

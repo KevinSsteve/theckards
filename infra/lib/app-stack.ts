@@ -44,7 +44,7 @@ export interface AppStackProps extends cdk.StackProps {
   useAppDbCredentials: boolean;
   alertEmail?: string;
   githubRepo?: string;
-  /** Monthly spend, in USD, above which the owner is told. Forecast at 100 %, actual at 80 %. */
+  /** Monthly gross usage, in USD, above which the owner is told: once on forecast, once on actual. */
   monthlyBudgetUsd?: number;
 }
 
@@ -624,10 +624,10 @@ export class AppStack extends cdk.Stack {
     reachability.addOkAction(act);
 
     /**
-     * Spend, in an account that hosts other projects. Without tags there is no way to tell whose bill is whose,
-     * so every resource in this stack is tagged and the budget is scoped to that tag. Cost allocation tags have
-     * to be activated once in Billing and take about a day to start appearing, so a brand new budget reads zero
-     * until that happens; it is not broken.
+     * Spend, in an account that hosts other projects ([ADR-022](../../docs/adr/022-cost-attribution-and-budget.md)).
+     * Without tags there is no way to tell whose bill is whose, so every resource in this stack is tagged and the
+     * budget is scoped to that tag. Cost allocation tags have to be activated once in Billing and take about a day
+     * to start appearing, so a brand new budget reads zero until that happens; it is not broken.
      */
     // An AppConfig deployment is a point-in-time record, not a billed resource, and tagging it forces a
     // replacement that re-deploys the feature flags for no cost-attribution benefit. Excluded deliberately.
@@ -639,17 +639,23 @@ export class AppStack extends cdk.Stack {
         budgetName: `${p}-monthly`,
         budgetType: "COST",
         timeUnit: "MONTHLY",
-        budgetLimit: { amount: props.monthlyBudgetUsd ?? 150, unit: "USD" },
+        // The verified fixed baseline is about US$160 a month, US$165 to 175 with usage (ADR-022). The limit sits
+        // above it, so a normal month never alerts and an alert always means something changed.
+        budgetLimit: { amount: props.monthlyBudgetUsd ?? 200, unit: "USD" },
         costFilters: { TagKeyValue: [`user:Project$theckards`] },
+        // Gross usage, not the net bill. AWS Activate credits cover the bill today, and a budget that counts
+        // credits (the default) would read about zero and never fire. Gross usage is the rate at which credits
+        // are consumed, and it becomes the real bill the day they run out.
+        costTypes: { includeCredit: false, includeRefund: false },
       },
       notificationsWithSubscribers: [
-        // Forecast first, so there is time to act, then actual at the limit.
+        // Forecast first, so there is time to act before the month closes; then actual, to confirm.
         {
           notification: { notificationType: "FORECASTED", comparisonOperator: "GREATER_THAN", threshold: 100, thresholdType: "PERCENTAGE" },
           subscribers: [{ subscriptionType: "EMAIL", address: alertEmail }],
         },
         {
-          notification: { notificationType: "ACTUAL", comparisonOperator: "GREATER_THAN", threshold: 80, thresholdType: "PERCENTAGE" },
+          notification: { notificationType: "ACTUAL", comparisonOperator: "GREATER_THAN", threshold: 100, thresholdType: "PERCENTAGE" },
           subscribers: [{ subscriptionType: "EMAIL", address: alertEmail }],
         },
       ],
