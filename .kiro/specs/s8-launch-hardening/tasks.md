@@ -9,7 +9,12 @@
 - [~] T8.3 k6 a 3×; restauro de backup com RTO/RPO medidos; failover testado se Multi-AZ for adotado por ADR.
   - Feito: restauro PITR medido em produção, 23 min 42 s e zero perda ([ADR-009](../../../docs/adr/009-rto-rpo.md)).
   - Falta: k6; ensaio do corte (cutover) para a instância restaurada.
-- [ ] T8.4 axe + manual, Lighthouse CI, ZAP, suíte IDOR completa.
+- [~] T8.4 axe + manual, Lighthouse CI, ZAP, suíte IDOR completa.
+  - Feito: axe-core 4.14.0 em 18 estados de página, zero violações; verificação manual de foco, contraste,
+    reflow, títulos e sessão expirada, com defeitos corrigidos e presos por testes; LCP e JS inicial medidos com o
+    perfil de throttling do Lighthouse ([accessibility](../../../docs/accessibility.md)). Suíte IDOR: o gate de
+    build já exige um teste de outsider por módulo autorizado por `member()`.
+  - Falta: leitor de ecrã (NVDA/VoiceOver), automatizar a auditoria após cada deploy, ZAP.
 - [ ] T8.5 Gate de build contra RASCUNHO; aprovação dos textos pelo dono no Admin → Legal.
 - [~] T8.6 Retention sweeper; denúncias/suspensão; revisão Bedrock (retenção/treino) refletida na Privacy Policy.
   - Feito: sweeper no worker (`apps/worker/src/retention.ts`), só sobre dados operacionais (sessões, chaves de
