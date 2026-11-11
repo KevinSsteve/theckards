@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "./Button";
+import { useFocusAfter } from "./focus";
 
 export interface SignFormProps {
   /** POST endpoint that emails a 6-digit code. */
@@ -24,6 +25,8 @@ export function SignForm({ codeUrl, submitUrl, headers, extraBody, allowRequestC
   const [codeSent, setCodeSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  // "Email me a verification code" is replaced by the code field, so focus goes straight to it.
+  const codeField = useFocusAfter<HTMLInputElement>(codeSent);
 
   async function post(url: string, body?: unknown): Promise<boolean> {
     setBusy(true); setMessage("");
@@ -57,7 +60,7 @@ export function SignForm({ codeUrl, submitUrl, headers, extraBody, allowRequestC
       ? <Button type="button" busy={busy} disabled={!consent || (askEmail && !/^\S+@\S+\.\S+$/.test(email))} onClick={async () => { if (await post(codeUrl, askEmail ? { email } : {})) { setCodeSent(true); setMessage("We emailed you a 6-digit code. It expires in 10 minutes."); } }}>Email me a verification code</Button>
       : <>
         <label htmlFor="otp-code">6-digit code</label>
-        <input id="otp-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} />
+        <input id="otp-code" ref={codeField} inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} />
         <div className="actions">
           <Button busy={busy} disabled={!consent || code.length !== 6 || typedName.trim().length < 3}>{busy ? "Signing…" : "Sign"}</Button>
           {allowRequestChanges && <Button type="button" className="secondary" busy={busy} disabled={!consent || code.length !== 6} onClick={async () => {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../components/Button";
+import { useFocusAfter } from "../../components/focus";
 import { sessionWatch } from "../../components/session-watch";
 
 interface Slot { kind: string; label: string; role: string; partyName: string; mine: boolean; declaredAt: string | null; note: string | null }
@@ -35,6 +36,9 @@ export function RecordPanel({ id }: { id: string }) {
   const [text, setText] = useState("");
   const [mode, setMode] = useState<"message" | "note">("message");
   const [notes, setNotes] = useState<Record<string, string>>({});
+  // A declared slot loses its "Declare" button, so focus moves to the slot, which now reads what was declared.
+  const [declared, setDeclared] = useState<string | null>(null);
+  const declaredSlot = useFocusAfter<HTMLLIElement>(declared);
 
   const load = useCallback(async () => {
     if (sessionWatch().ended()) return;
@@ -119,7 +123,7 @@ export function RecordPanel({ id }: { id: string }) {
       {!record.legalReady && <p className="notice">Declaring confirmations, messages and notes opens after the updated Privacy Policy is approved.</p>}
       <p><strong>{record.outcomeLabel}</strong></p>
       <ul className="slots">
-        {record.slots.map((slot) => <li key={`${slot.kind}:${slot.role}`}>
+        {record.slots.map((slot) => <li key={`${slot.kind}:${slot.role}`} {...(slot.kind === declared && slot.mine ? { ref: declaredSlot, tabIndex: -1 } : {})}>
           <strong>{slot.label}</strong> <span className="muted">— {roleName(slot.role)}: {slot.partyName}{slot.mine ? " (you)" : ""}</span><br />
           {slot.declaredAt
             ? <span>Declared by {slot.partyName} on {new Date(slot.declaredAt).toUTCString()}{slot.note ? ` — “${slot.note}”` : ""}</span>
@@ -128,7 +132,10 @@ export function RecordPanel({ id }: { id: string }) {
                   <input aria-label={`Optional note for ${slot.label}`} placeholder="Optional note (max 500)" maxLength={500} value={notes[slot.kind] ?? ""} onChange={(event) => setNotes({ ...notes, [slot.kind]: event.target.value })} style={{ maxWidth: 320 }} />
                   <Button busy={busy} onClick={async () => {
                     if (!window.confirm(`Declare “${slot.label}”? Declarations cannot be edited or removed.`)) return;
-                    if (await post("confirmations", { kind: slot.kind, ...(notes[slot.kind]?.trim() ? { note: notes[slot.kind]!.trim() } : {}) })) setNotes({ ...notes, [slot.kind]: "" });
+                    if (await post("confirmations", { kind: slot.kind, ...(notes[slot.kind]?.trim() ? { note: notes[slot.kind]!.trim() } : {}) })) {
+                      setNotes({ ...notes, [slot.kind]: "" });
+                      setDeclared(slot.kind);
+                    }
                   }}>Declare</Button>
                 </span>
               : <span className="muted">Waiting for {slot.partyName}. No confirmation recorded yet.</span>}

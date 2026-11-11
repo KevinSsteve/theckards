@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../components/Button";
+import { useFocusAfter } from "../../components/focus";
 
 type View =
   | { status: "OPEN"; expiresAt: string }
@@ -32,6 +33,10 @@ export function InPersonSigner({ token, initial, hasDownloadSession }: { token: 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [downloadable, setDownloadable] = useState(hasDownloadSession);
+  // Both actions replace the button that started them: "Sign" becomes the code, "Get the sealed PDF" becomes
+  // the download links. Focus follows to what the person needs next.
+  const codeHeading = useFocusAfter<HTMLHeadingElement>(code);
+  const downloadLink = useFocusAfter<HTMLAnchorElement>(downloadable && !hasDownloadSession);
 
   const refresh = useCallback(async () => {
     const response = await fetch(`${base}/status`);
@@ -86,7 +91,7 @@ export function InPersonSigner({ token, initial, hasDownloadSession }: { token: 
       <h2>Signed by both parties</h2>
       {!view.sealed && <p aria-live="polite">The sealed record is being generated…</p>}
       {view.sealed && downloadable && <>
-        <p className="actions"><a className="button" href="/api/guest/documents/final">Download sealed PDF</a><a className="button secondary" href="/api/guest/documents/final/receipt">Download receipt</a></p>
+        <p className="actions"><a ref={downloadLink} className="button" href="/api/guest/documents/final">Download sealed PDF</a><a className="button secondary" href="/api/guest/documents/final/receipt">Download receipt</a></p>
         <p className="muted">Save it now: without an account you can download it only on this device, for about 2 hours. Anyone can later check that a copy is unchanged on the verification page.</p>
       </>}
       {view.sealed && !downloadable && view.downloadReady && <Button type="button" busy={busy} onClick={() => { void claimDownload(); }}>Get the sealed PDF</Button>}
@@ -105,7 +110,7 @@ export function InPersonSigner({ token, initial, hasDownloadSession }: { token: 
   }
   if (view.status === "AWAITING_CONFIRMATION" && code) {
     return <section className="card" aria-live="polite">
-      <h2>Show this code to the other party</h2>
+      <h2 ref={codeHeading} tabIndex={-1}>Show this code to the other party</h2>
       <p style={{ fontSize: "2.75rem", fontWeight: 750, letterSpacing: ".35em", fontVariantNumeric: "tabular-nums", margin: "1rem 0" }}>{code}</p>
       <p>They type it on their screen to confirm your signature. Expires {new Date(view.expiresAt).toLocaleTimeString()}.</p>
       <Button type="button" className="secondary" busy={busy} onClick={() => { void requestCode(typedName); }}>Show a new code</Button>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../components/Button";
+import { useFocusAfter } from "../../components/focus";
 import { sessionWatch } from "../../components/session-watch";
 
 function csrf(): string {
@@ -110,6 +111,8 @@ function InPersonPanel({ id, lockVersion }: { id: string; lockVersion: number })
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  // "Show QR code" is replaced by the code itself, so focus goes to the instruction above it.
+  const qrIntro = useFocusAfter<HTMLParagraphElement>(qr);
 
   const refresh = useCallback(async () => {
     if (sessionWatch().ended()) return;
@@ -147,7 +150,7 @@ function InPersonPanel({ id, lockVersion }: { id: string; lockVersion: number })
       <Button type="button" busy={busy} onClick={start}>Show QR code</Button>
     </>}
     {qr && !awaiting && !ended && <>
-      <p>Ask the other party to scan this code with their phone camera.</p>
+      <p ref={qrIntro} tabIndex={-1}>Ask the other party to scan this code with their phone camera.</p>
       {/* SVG is generated server-side by the qrcode library from our own URL. */}
       <div role="img" aria-label="QR code to sign this agreement" style={{ width: 260, maxWidth: "100%", background: "white", padding: 8 }} dangerouslySetInnerHTML={{ __html: qr.svg }} />
       <p className="muted">Single use. Expires {new Date(qr.expiresAt).toLocaleTimeString()}. Show it only to the other party.</p>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../components/Button";
+import { useFocusAfter } from "../../components/focus";
 import { sessionWatch } from "../../components/session-watch";
 
 interface Section { heading: string; paragraphs: string[] }
@@ -31,6 +32,12 @@ export function CasePanel({ id }: { id: string }) {
   const [typedName, setTypedName] = useState("");
   const [consent, setConsent] = useState(false);
   const [showOpen, setShowOpen] = useState(false);
+  const [formClosed, setFormClosed] = useState(0);
+  const [acceptedId, setAcceptedId] = useState<string | null>(null);
+  // Each of these actions replaces the button that started it, so focus follows to what comes next.
+  const reasonField = useFocusAfter<HTMLTextAreaElement>(showOpen);
+  const openButton = useFocusAfter<HTMLButtonElement>(formClosed);
+  const addendumHeading = useFocusAfter<HTMLHeadingElement>(acceptedId);
 
   const load = useCallback(async () => {
     if (sessionWatch().ended()) return;
@@ -81,10 +88,10 @@ export function CasePanel({ id }: { id: string }) {
     {!showCase && view.canOpen && (showOpen
       ? <form onSubmit={async (event) => { event.preventDefault(); if (window.confirm("Open a case? The agreement terms stay frozen while it is open.") && await post("", { reason })) setReason(""); }}>
           <label htmlFor="case-reason">What is not going as agreed? (facts only)</label>
-          <textarea id="case-reason" minLength={3} maxLength={2000} required value={reason} onChange={(event) => setReason(event.target.value)} />
-          <div className="actions"><Button busy={busy} disabled={reason.trim().length < 3}>Open case</Button><button type="button" className="secondary" onClick={() => setShowOpen(false)}>Cancel</button></div>
+          <textarea id="case-reason" ref={reasonField} minLength={3} maxLength={2000} required value={reason} onChange={(event) => setReason(event.target.value)} />
+          <div className="actions"><Button busy={busy} disabled={reason.trim().length < 3}>Open case</Button><button type="button" className="secondary" onClick={() => { setShowOpen(false); setFormClosed((n) => n + 1); }}>Cancel</button></div>
         </form>
-      : <button type="button" className="secondary" onClick={() => setShowOpen(true)}>Open a case</button>)}
+      : <button type="button" ref={openButton} className="secondary" onClick={() => setShowOpen(true)}>Open a case</button>)}
     {c && c.status === "WITHDRAWN" && !showCase && <p className="muted">The last case was withdrawn on {c.closedAt ? date(c.closedAt) : ""}.</p>}
 
     {showCase && c && <>
@@ -99,7 +106,7 @@ export function CasePanel({ id }: { id: string }) {
           <span className="muted">{date(p.createdAt)} · {p.author}{p.mine ? " (you)" : ""}{p.current ? "" : " · replaced by a newer proposal"}{p.accepted ? " · accepted" : ""}</span>
           <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", opacity: p.current ? 1 : 0.6 }}>{p.body}</div>
           {p.canAccept && <Button busy={busy} onClick={async () => {
-            if (window.confirm(`Accept this proposal from ${p.author}? A resolution addendum with exactly this text will be prepared for both of you to sign.`)) await post(`/proposals/${p.id}/accept`);
+            if (window.confirm(`Accept this proposal from ${p.author}? A resolution addendum with exactly this text will be prepared for both of you to sign.`) && await post(`/proposals/${p.id}/accept`)) setAcceptedId(p.id);
           }}>Accept this proposal</Button>}
         </li>)}
       </ol>
@@ -110,7 +117,7 @@ export function CasePanel({ id }: { id: string }) {
       </form>}
 
       {c.addendum && <div className="card">
-        <h3>Resolution addendum</h3>
+        <h3 ref={addendumHeading} tabIndex={-1}>Resolution addendum</h3>
         {c.addendum.sections.map((s) => <div key={s.heading}><strong>{s.heading}</strong>{s.paragraphs.map((t) => <p key={t} style={{ whiteSpace: "pre-wrap" }}>{t}</p>)}</div>)}
         {c.addendum.renderStatus === "READY" && <p><a className="button secondary" href={`/api/agreements/${id}/case/addendum/preview`} target="_blank" rel="noreferrer">Open the exact addendum PDF</a></p>}
         {c.addendum.renderStatus !== "READY" && c.addendum.status !== "CANCELLED" && <p className="muted" aria-live="polite">The addendum document is being generated…</p>}
