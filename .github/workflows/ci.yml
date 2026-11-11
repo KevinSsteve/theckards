@@ -21,7 +21,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # Full history, as gitleaks-action requires. On a pull request it scans the PR's commits as a git range, and a
+      # one-commit clone of the merge ref contains neither end of it, so the scan failed before reading anything
+      # (first seen on PR #1; pushes to main scan differently and passed).
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
         with:

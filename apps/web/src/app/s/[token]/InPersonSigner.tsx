@@ -111,7 +111,7 @@ export function InPersonSigner({ token, initial, hasDownloadSession }: { token: 
   if (view.status === "AWAITING_CONFIRMATION" && code) {
     return <section className="card" aria-live="polite">
       <h2 ref={codeHeading} tabIndex={-1}>Show this code to the other party</h2>
-      <p style={{ fontSize: "2.75rem", fontWeight: 750, letterSpacing: ".35em", fontVariantNumeric: "tabular-nums", margin: "1rem 0" }}>{code}</p>
+      <p className="code-display">{code}</p>
       <p>They type it on their screen to confirm your signature. Expires {new Date(view.expiresAt).toLocaleTimeString()}.</p>
       <Button type="button" className="secondary" busy={busy} onClick={() => { void requestCode(typedName); }}>Show a new code</Button>
       {message && <p className="error" role="alert">{message}</p>}

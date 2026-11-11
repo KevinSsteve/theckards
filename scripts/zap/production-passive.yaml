@@ -1,0 +1,75 @@
+# OWASP ZAP Automation Framework plan: a passive scan of production (R-SEC-3).
+#
+# Passive means ZAP only reads. It requests the public pages below, follows links, and inspects every response for
+# missing protections, unsafe cookies and information leaks. It submits no forms (processForm: false) and has no
+# activeScan job, so it never sends an attack payload and cannot create data. An active scan belongs against a
+# staging environment, not production.
+#
+# Run it with scripts/zap/run.sh. Findings at or above the Medium risk level fail the run.
+env:
+  contexts:
+    - name: theckards-production
+      urls:
+        - https://theckards.linkealls.com
+      includePaths:
+        - "https://theckards\\.linkealls\\.com.*"
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+  vars:
+    REPORT_DIR: "."
+
+jobs:
+  - type: passiveScan-config
+    parameters:
+      maxAlertsPerRule: 10
+      scanOnlyInScope: true
+
+  # Pages the crawler cannot reach by links: the API's public surface, error responses and the key set.
+  - type: requestor
+    requests:
+      # The WAF blocks requests without a User-Agent (NoUserAgent_HEADER). The crawler uses the agent run.sh sets;
+      # this job sends none unless told. ZAP does not expand ${variables} inside headers, so the header is written
+      # once as a YAML anchor and reused, which the YAML parser resolves before ZAP reads the plan.
+      - { url: "https://theckards.linkealls.com/", headers: [&ua "User-Agent: Mozilla/5.0 (X11; Linux x86_64) Theckards-passive-scan/1 (+https://github.com/KevinSsteve/theckards)"] }
+      - { url: "https://theckards.linkealls.com/verify", headers: [*ua] }
+      - { url: "https://theckards.linkealls.com/verify/how", headers: [*ua] }
+      - { url: "https://theckards.linkealls.com/legal/terms", headers: [*ua] }
+      - { url: "https://theckards.linkealls.com/legal/privacy", headers: [*ua] }
+      - { url: "https://theckards.linkealls.com/legal/esign", headers: [*ua] }
+      - { url: "https://theckards.linkealls.com/legal/notice", headers: [*ua] }
+      - { url: "https://theckards.linkealls.com/does-not-exist", headers: [*ua], responseCode: 404 }
+      - { url: "https://theckards.linkealls.com/.well-known/theckards-keys.json", headers: [*ua] }
+      - { url: "https://theckards.linkealls.com/api/public/verify/3ad874b7d79c2e3ae07926f93a5d9a58df55153654c799ab0ae26a5fd1ec8583", headers: [*ua] }
+      - { url: "https://theckards.linkealls.com/api/agreements", headers: [*ua], responseCode: 401 }
+      - { url: "https://theckards.linkealls.com/healthz", headers: [*ua] }
+      - { url: "https://theckards.linkealls.com/readyz", headers: [*ua] }
+
+  - type: spider
+    parameters:
+      context: theckards-production
+      # The crawler sends an empty agent unless told, which the WAF blocks like a missing one.
+      userAgent: "Mozilla/5.0 (X11; Linux x86_64) Theckards-passive-scan/1 (+https://github.com/KevinSsteve/theckards)"
+      maxDuration: 3
+      maxDepth: 5
+      threadCount: 2
+      processForm: false
+      postForm: false
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+
+  # The "plus" report carries request and response headers, so run.sh can prove the scan saw the application
+  # and not a block page.
+  - type: report
+    parameters:
+      template: traditional-json-plus
+      reportDir: ${REPORT_DIR}
+      reportFile: zap-passive.json
+  - type: report
+    parameters:
+      template: traditional-md
+      reportDir: ${REPORT_DIR}
+      reportFile: zap-passive.md

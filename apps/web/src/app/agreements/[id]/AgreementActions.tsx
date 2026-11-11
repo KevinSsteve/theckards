@@ -152,7 +152,7 @@ function InPersonPanel({ id, lockVersion }: { id: string; lockVersion: number })
     {qr && !awaiting && !ended && <>
       <p ref={qrIntro} tabIndex={-1}>Ask the other party to scan this code with their phone camera.</p>
       {/* SVG is generated server-side by the qrcode library from our own URL. */}
-      <div role="img" aria-label="QR code to sign this agreement" style={{ width: 260, maxWidth: "100%", background: "white", padding: 8 }} dangerouslySetInnerHTML={{ __html: qr.svg }} />
+      <div role="img" aria-label="QR code to sign this agreement" className="qr" dangerouslySetInnerHTML={{ __html: qr.svg }} />
       <p className="muted">Single use. Expires {new Date(qr.expiresAt).toLocaleTimeString()}. Show it only to the other party.</p>
     </>}
     {awaiting && <form onSubmit={async (event) => {
@@ -164,7 +164,7 @@ function InPersonPanel({ id, lockVersion }: { id: string; lockVersion: number })
     }}>
       <p><strong>{view?.counterpartyTypedName}</strong> signed on their device.</p>
       <label htmlFor="confirm-code">Type the 6-digit code shown on their screen</label>
-      <input id="confirm-code" inputMode="numeric" autoComplete="off" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} style={{ fontSize: "1.5rem", letterSpacing: ".3em", maxWidth: 220 }} />
+      <input id="confirm-code" inputMode="numeric" autoComplete="off" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} className="code-entry" />
       <p className="muted">Only confirm if the person in front of you is the one who signed. {view?.attemptsLeft} attempt(s) left.</p>
       <Button busy={busy} disabled={code.length !== 6}>{busy ? "Confirming…" : "Confirm signature"}</Button>
     </form>}

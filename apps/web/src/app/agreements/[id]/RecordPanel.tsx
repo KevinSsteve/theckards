@@ -129,7 +129,7 @@ export function RecordPanel({ id }: { id: string }) {
             ? <span>Declared by {slot.partyName} on {new Date(slot.declaredAt).toUTCString()}{slot.note ? ` — “${slot.note}”` : ""}</span>
             : slot.mine && record.canConfirm
               ? <span className="actions">
-                  <input aria-label={`Optional note for ${slot.label}`} placeholder="Optional note (max 500)" maxLength={500} value={notes[slot.kind] ?? ""} onChange={(event) => setNotes({ ...notes, [slot.kind]: event.target.value })} style={{ maxWidth: 320 }} />
+                  <input aria-label={`Optional note for ${slot.label}`} placeholder="Optional note (max 500)" maxLength={500} value={notes[slot.kind] ?? ""} onChange={(event) => setNotes({ ...notes, [slot.kind]: event.target.value })} className="note-field" />
                   <Button busy={busy} onClick={async () => {
                     if (!window.confirm(`Declare “${slot.label}”? Declarations cannot be edited or removed.`)) return;
                     if (await post("confirmations", { kind: slot.kind, ...(notes[slot.kind]?.trim() ? { note: notes[slot.kind]!.trim() } : {}) })) {
@@ -158,7 +158,7 @@ export function RecordPanel({ id }: { id: string }) {
         {evidence.items.length === 0 && <li className="muted">No evidence attached yet.</li>}
         {evidence.items.map((item) => <li key={item.id}>
           <strong>{item.filename}</strong> <span className="muted">— {item.uploadedBy}{item.mine ? " (you)" : ""} · {new Date(item.createdAt).toUTCString()}{item.bytes ? ` · ${Math.ceil(item.bytes / 1024)} kB` : ""}</span>
-          {item.note && <div style={{ overflowWrap: "anywhere" }}>{item.note}</div>}
+          {item.note && <div className="wrap-anywhere">{item.note}</div>}
           <div className={item.status === "INFECTED" || item.status === "FAILED" || item.status === "UNSUPPORTED" ? "error" : "muted"}>{item.statusLabel}</div>
           {item.downloadable && <p className="actions"><a className="button secondary" href={`/api/agreements/${id}/evidence/${item.id}/file`}>Download file</a>{item.sha256 && <span className="muted">SHA-256 {item.sha256.slice(0, 16)}…</span>}</p>}
         </li>)}
@@ -183,7 +183,7 @@ export function RecordPanel({ id }: { id: string }) {
       <ol className="timeline">
         {record.timeline.map((entry, index) => <li key={`${entry.at}:${index}`}>
           <span className="muted">{new Date(entry.at).toUTCString()} · {entry.type.toLowerCase()}{entry.partyName ? ` · ${entry.partyName}${entry.mine ? " (you)" : ""}` : ""}</span>
-          <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{entry.text}</div>
+          <div className="verbatim">{entry.text}</div>
         </li>)}
       </ol>
     </section>
