@@ -12,7 +12,10 @@ https://theckards.linkealls.com.
 | Requirement | Evidence |
 | --- | --- |
 | Infrastructure entirely in CDK, stateful resources RETAIN, no manual steps | `infra/` with cdk-nag; every deploy in this project went through `cdk deploy`. RDS shows `DeletionProtection: true`. |
+| **Deploys cannot half-fail** | [`scripts/deploy-prod.sh`](../scripts/deploy-prod.sh) refuses before changing anything unless the commit is on `origin/main`, no stack update is running, both images exist with clean scans, and CI passed. Dry runs refused the tag that stalled a deploy on 2026-11-11 (`4ecb519`, never built), a release whose CI was red, and a commit that is not public. It migrates with the new image before the services switch. Release `95be818` went through it end to end. See [deploy-stuck](runbooks/deploy-stuck.md). |
+| **CI green, including the secret scan** | Every push from the workflow's creation until 2026-11-11 failed the gitleaks step on one test fixture. Fixed in `ee0018f`, the first green run; the full tracked tree scans clean with gitleaks 8.24.3, verified against its published checksum. |
 | Database encrypted, backups retained | `aws rds describe-db-instances`: `StorageEncrypted: true`, `BackupRetentionPeriod: 14`, latest restorable point minutes old. Single-AZ by [ADR-002](adr/002-database.md). |
+| **RTO and RPO measured, not assumed** (R-OPS-5, recovery half) | Point-in-time restore performed in production on 2026-11-11: database available in **23 min 42 s** against a 4-hour RTO, recovery point trailing the present by **3 min 40 s** against a 5-minute RPO. The restored copy matched production exactly: 35 tables, identical row counts across twelve tables, the three most recent seals identical by id and SHA-256, and the `schema_migrations` revoke still in force. Numbers and caveats in [ADR-009](adr/009-rto-rpo.md); procedure in [backup-restore](runbooks/backup-restore.md). |
 | **ALB unreachable outside CloudFront** (R-SEC-3, part) | ALB security group ingress is 443 from the CloudFront origin-facing prefix list `pl-3b927c52` only, with no CIDR rules. A direct request to the ALB DNS name times out (curl exit 000). |
 | WAF in front of the edge | `theckards-prod-waf` on the CloudFront scope ([ADR-006](adr/006-waf.md)). |
 | Admin surface restricted | `/admin` and `/api/admin/*` require the Cognito `admins` group with MFA and a separate ADMIN session cookie ([ADR-015](adr/015-admin-mfa.md)); audited in `audit_logs`. |
@@ -20,37 +23,36 @@ https://theckards.linkealls.com.
 | Production build fails on unfinished legal text (R-LEG-6, build half) | `Dockerfile.web` runs `pnpm lint && pnpm -r typecheck && pnpm test`, and the suite composes every legal version the way the migrations do, requires each replacement to match exactly once, and rejects placeholders. Verified to fail when a placeholder is injected. |
 | Legal texts approved by the owner | TERMS v2, PRIVACY v4, ESIGN v3, NOTICE v1 all `APPROVED`; v1–v3 predecessors `RETIRED`. No stored document contains a `[TO COMPLETE:` marker. |
 | Retention matches what the Privacy Policy promises (R-PRV-1, part) | Policy section 6 checked row by row against the database: completed in-person sessions have `code_hash` cleared, no expired invite still holds a token hash, CloudWatch log groups are 90 days, RDS backups 14 days, S3 lifecycle expires noncurrent versions at 90 days and the quarantine bucket at 7. |
+| **Retention sweeper** (R-PRV-1, jobs half) | `apps/worker/src/retention.ts` removes dead sessions, replay keys, rate-limit events, expired codes, published outbox rows and old job-ledger rows, and never the record: a test fails if any record table loses the grant that stops the application role from deleting it. The exact statements were run against production in a rolled-back transaction before release. First production pass on 2026-11-11 at 07:35:01Z: 17 ms, nothing yet old enough to remove. Alarm and [runbook](runbooks/retention-sweep-failure.md). |
 | Only essential cookies, no analytics carrying content | Cookies are `__Host-` prefixed session, CSRF, device and guest-session only; no analytics dependency in `apps/web/package.json`. |
-| No personal data in logs | Job failures mask addresses before logging; the one place IP and user agent exist is field-encrypted and never exported, including in the dossier. |
-| Images scanned, zero findings | ECR scan on every deployed tag; `theckards-web` and `theckards-worker` at the current tag both return empty severity counts. |
+| No personal data in logs | Job failures mask addresses before logging; the one place IP and user agent exist is field-encrypted and never exported, including in the dossier. The deploy script removes the operator's address from its own log. |
+| Images scanned, zero findings | ECR scan on every deployed tag, enforced by the deploy script; `theckards-web` and `theckards-worker` at the current tag return no critical or high findings. |
 | Public verification works without an account | `/verify` hashes locally; valid hash returns the seal, one character changed returns no match. Checked for all three kinds: FINAL, ADDENDUM, DOSSIER. |
 | Dossier verifies itself | `scripts/verify-dossier.mjs`, which imports none of the application code, passes all eight checks against a dossier built in production, including the ECDSA signature against the published key. |
-| Alarms reach a person (R-OPS-1) | **Fixed on 2026-11-11.** Ten alarms existed and the topic they publish to had zero subscribers, so nothing could ever be delivered. The stack now refuses to synthesize without a destination. See [alerts-not-delivered](runbooks/alerts-not-delivered.md). |
-| **RTO and RPO measured, not assumed** (R-OPS-5, recovery half) | Point-in-time restore performed in production on 2026-11-11: database available in **23 min 42 s** against a 4-hour RTO, recovery point trailing the present by **3 min 40 s** against a 5-minute RPO. The restored copy matched production exactly: 35 tables, identical row counts across twelve tables, the three most recent seals identical by id and SHA-256, and the `schema_migrations` revoke still in force. Numbers and caveats in [ADR-009](adr/009-rto-rpo.md); procedure in [backup-restore](runbooks/backup-restore.md). |
-| A runbook for each predictable failure | 19 runbooks in [`docs/runbooks/`](runbooks/); each alarm's description names its runbook file. |
-| Decision records | 20 ADRs in [`docs/adr/`](adr/), each with the fixed monthly cost, the simpler alternative and the operational risk. |
+| **Alarms reach a person** (R-OPS-1) | Ten alarms existed and the topic they publish to had zero subscribers until 2026-11-11, so nothing could be delivered. The stack now refuses to synthesize without a destination, the subscription is confirmed, and a test publish was delivered. See [alerts-not-delivered](runbooks/alerts-not-delivered.md). |
+| **An outage that looks healthy is detected** (R-OPS-3, part) | All symptom alarms treat missing data as healthy, so a total outage showed as green. A Route 53 HTTPS health check on `/healthz` every 30 s now reports 16 of 16 checkers healthy, with the one alarm that treats missing data as breaching. HTTPS is required because Route 53 counts a 3xx as healthy and CloudFront answers HTTP with a 301 without reaching the origin. US$1.00 to $2.75 a month, verified. See [ADR-021](adr/021-external-availability-check.md), [unreachable](runbooks/unreachable.md). |
+| **Spend attributable and budgeted** (R-COST-1, part) | Every resource in the application stack is tagged `Project=theckards` (checked on the web service and the database). Budget `theckards-prod-monthly`: US$200, gross usage (`IncludeCredit: false`, read back from the API), alerts on forecast and actual above 100 %, against a priced baseline of about US$160 fixed. See [ADR-022](adr/022-cost-attribution-and-budget.md). |
+| A runbook for each predictable failure | 22 runbooks in [`docs/runbooks/`](runbooks/); each alarm's description names its runbook file. |
+| Decision records | 22 ADRs in [`docs/adr/`](adr/), each with the fixed monthly cost, the simpler alternative and the operational risk. |
 
 ## Not done, and what it would take
 
 | Requirement | Status |
 | --- | --- |
-| R-OPS-2 SLOs with burn-rate alarms | Not defined. The ten alarms are threshold alarms on symptoms (5xx, queue age, DLQ depth, CPU, storage), not error-budget burn rates. Needs the SLOs written down first; a burn-rate alarm on an undefined objective is theatre. |
-| R-OPS-3 Canary every 5 minutes | Not built. CloudWatch Synthetics is not free: roughly US$0.0012 per run, about US$10/month at a five-minute cadence, so it needs an ADR on whether that is worth it before go-live. |
+| R-OPS-2 SLOs with burn-rate alarms | Not defined. The alarms are threshold alarms on symptoms, not error-budget burn rates. Needs the SLOs written down first; a burn-rate alarm on an undefined objective is theatre. |
+| R-OPS-3 Scripted canary | Reachability is covered (above). The scripted sign-up and contract flow is deferred: run against production every five minutes it would create about 8,700 accounts and agreements a month, the pattern the fraud rules exist to exclude. It needs a staging environment ([ADR-021](adr/021-external-availability-check.md)). |
 | R-OPS-5 Load test at 3× target | Not done. No k6 run. |
 | R-A11Y-1 WCAG 2.2 AA, Lighthouse CI | Not verified. The UI is plain semantic HTML with labelled inputs and `aria-live` on the polling regions, which is a good start, but no axe or Lighthouse run has been recorded. |
 | R-SEC-3 DAST (ZAP) | Not run. |
 | R-EML-1 SES out of sandbox, DKIM/SPF/DMARC, bounce suppression | **Blocked by AWS.** SES production access was denied, so email delivery is off (`EMAIL_DELIVERY_ENABLED=false`) and signing happens in person by QR code instead ([ADR-018](adr/018-in-person-qr-signing.md)). Bounce and complaint alarms exist and are wired. |
 | R-ABU-1 Report button, account suspension | Not built. Rate limits and WAF rules are in place; the user-facing report flow and suspension are S11 T11.7. |
-| R-COST-1 Cost per agreement, budgets, anomaly detection | Not done. No resource tags exist yet, so a budget cannot be scoped to Theckards in an account shared with other projects. Needs stack-wide tagging, cost allocation tag activation (about 24 hours to take effect), then a budget and an anomaly monitor, both free at this scale. |
+| R-COST-1 Cost per agreement, anomaly detection | Waits for data: the `Project` cost allocation tag still has to be activated (the Cost Explorer API is rate-limited for this account, so it is a console step, below), then a month of tagged costs. Cost Anomaly Detection is free and worth adding once that data exists. |
 | R-PRV-1 Bedrock retention and training terms reviewed | Not applicable yet: no model agreement is accepted for this account, so Bedrock is unreachable and the AI assistant (S9) is not built. Review before enabling it. |
-| Retention sweeper job | Not built, and not yet needed: nothing is accumulating on a service this young, and every promise the policy makes is currently kept. Needed before volume arrives. |
 
 ## Before switching on sign-ups
 
-1. **Confirm the alarm subscription.** AWS emails a confirmation link to the operator mailbox; until it is
-   opened, `SubscriptionArn` reads `PendingConfirmation` and no alert is delivered. Check with the command in
-   [alerts-not-delivered](runbooks/alerts-not-delivered.md).
+1. **Activate the cost allocation tag.** Billing console, Cost allocation tags, select `Project`, Activate. The
+   key only appears there once AWS has seen tagged usage, which can take up to a day. Until then the budget reads
+   zero, which is expected.
 2. **Practise the cutover.** The restore drill proved the data comes back. It did not prove anyone can put it
    back into service under pressure, which is the untested half of the 4-hour objective.
-3. **Decide on the canary** with an ADR, since it is the first item here with a recurring cost.
-4. **Tag the stack and set a budget**, so spend is attributable in an account that hosts other projects.
