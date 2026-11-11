@@ -47,6 +47,8 @@ Theckards **never** handles money between the parties, gives legal advice, decid
 | `infra` | AWS CDK (TypeScript) with cdk-nag |
 | `api/openapi.yaml` | HTTP API contract |
 | `docs/adr`, `docs/runbooks` | Architecture decisions and operational runbooks |
+| `docs/launch-checklist.md` | Each launch requirement with the evidence it was checked against, or what is missing |
+| `scripts/zap` | Passive OWASP ZAP scan of production; results in `docs/security-scan.md` |
 
 ## Develop
 

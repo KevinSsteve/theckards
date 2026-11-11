@@ -14,7 +14,12 @@
     reflow, títulos e sessão expirada, com defeitos corrigidos e presos por testes; LCP e JS inicial medidos com o
     perfil de throttling do Lighthouse ([accessibility](../../../docs/accessibility.md)). Suíte IDOR: o gate de
     build já exige um teste de outsider por módulo autorizado por `member()`.
-  - Falta: leitor de ecrã (NVDA/VoiceOver), automatizar a auditoria após cada deploy, ZAP.
+  - Feito (ZAP): scan passivo à produção com ZAP 2.17.0, High 0 / Medium 0 / Low 0 em `a40276b`, quatro achados
+    informativos triados. O primeiro scan encontrou a falta de Content-Security-Policy; todas as respostas HTML,
+    404 incluídos, têm agora uma política com nonce por pedido, sem `'unsafe-inline'` nem `'unsafe-eval'`,
+    verificada no Chrome em páginas públicas e autenticadas ([security-scan](../../../docs/security-scan.md)).
+  - Falta: leitor de ecrã (NVDA/VoiceOver), automatizar a auditoria e o scan após cada deploy, scan ativo e
+    autenticado (precisam de staging).
 - [ ] T8.5 Gate de build contra RASCUNHO; aprovação dos textos pelo dono no Admin → Legal.
 - [~] T8.6 Retention sweeper; denúncias/suspensão; revisão Bedrock (retenção/treino) refletida na Privacy Policy.
   - Feito: sweeper no worker (`apps/worker/src/retention.ts`), só sobre dados operacionais (sessões, chaves de
