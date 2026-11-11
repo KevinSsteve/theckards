@@ -1,3 +1,4 @@
+import { Brand } from "../components/Brand";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { GUEST_COOKIE } from "../../server/auth/cookies";
@@ -15,7 +16,7 @@ export default async function ClaimPage() {
   const guest = await loadGuestSession((await cookies()).get(GUEST_COOKIE)?.value);
   const preview = guest ? await claimPreview(session.userId, guest).catch(() => null) : null;
   return <>
-    <header className="topbar"><a className="brand" href="/dashboard">Theckards</a></header>
+    <header className="topbar"><Brand href="/dashboard" /></header>
     <main id="main-content" tabIndex={-1} className="shell narrow">
       <header className="page-header"><p className="page-kicker">Account access</p><h1>Keep access to your agreement</h1></header>
       {!preview && <section className="card"><p>There is nothing to link on this device. Open this page on the phone you signed with, within 2 hours of signing.</p><a className="button secondary" href="/dashboard">Go to your agreements</a></section>}

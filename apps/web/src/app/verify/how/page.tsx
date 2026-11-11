@@ -1,10 +1,11 @@
+import { Brand } from "../../components/Brand";
 import { PublicFooter } from "../../components/PublicFooter";
 
 export const metadata = { title: "How to verify offline" };
 
 export default function HowToVerifyPage() {
   return <>
-    <header className="topbar"><a className="brand" href="/">Theckards</a><a href="/verify">Verify a file</a></header>
+    <header className="topbar"><Brand /><a href="/verify">Verify a file</a></header>
     <main id="main-content" tabIndex={-1} className="shell narrow">
       <header className="page-header"><p className="page-kicker">Independent verification</p><h1>How to verify a receipt offline</h1><p className="lede">You need the sealed file, its <code>.receipt.json</code> sidecar, and the Theckards public key whose ID matches <code>key_id</code> in the receipt.</p></header>
       <ol className="instruction-list">

@@ -1,13 +1,14 @@
+import { Brand } from "./components/Brand";
 import { PublicFooter } from "./components/PublicFooter";
 
 export default function Home() {
   return (
     <>
       <header className="topbar">
-        <a className="brand" href="/">Theckards</a>
+        <Brand />
         <nav className="actions" aria-label="Account">
           <a className="button secondary" href="/api/auth/login">Sign in</a>
-          <a className="button" href="/api/auth/login">Create an agreement</a>
+          <a className="button" href="/api/auth/login">Create</a>
         </nav>
       </header>
       <main id="main-content" tabIndex={-1} className="shell home-shell">

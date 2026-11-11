@@ -1,3 +1,4 @@
+import { Brand } from "../components/Brand";
 import { redirect } from "next/navigation";
 import { listAgreements } from "../../server/agreements";
 import { currentUserSession } from "../../server/auth/current";
@@ -13,7 +14,7 @@ export default async function DashboardPage() {
   if (!(await userHasCurrentConsents(session.userId))) redirect("/legal/consent?next=/dashboard");
   const agreements = await listAgreements(session.userId);
   return <>
-    <header className="topbar"><a className="brand" href="/dashboard">Theckards</a><nav className="actions" aria-label="Account"><a href="/account">Account</a><LogoutButton /></nav></header>
+    <header className="topbar"><Brand href="/dashboard" /><nav className="actions" aria-label="Account"><a href="/account">Account</a><LogoutButton /></nav></header>
     <main id="main-content" tabIndex={-1} className="shell">
       <header className="page-header page-header-row">
         <div><p className="page-kicker">Your workspace</p><h1>Agreements</h1><p className="lede">Your records, signatures and next dates.</p></div>

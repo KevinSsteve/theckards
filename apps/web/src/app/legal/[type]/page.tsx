@@ -1,3 +1,4 @@
+import { Brand } from "../../components/Brand";
 import { notFound } from "next/navigation";
 import { currentApprovedLegal } from "../../../server/legal";
 import { LegalText } from "../../components/LegalText";
@@ -26,7 +27,7 @@ export default async function LegalDocumentPage({ params }: { params: Promise<{ 
   if (!documentType) notFound();
   const document = (await currentApprovedLegal()).find((d) => d.documentType === documentType);
   return <>
-    <header className="topbar"><a className="brand" href="/">Theckards</a><a href="/verify">Verify a record</a></header>
+    <header className="topbar"><Brand /><a href="/verify">Verify a record</a></header>
     <main id="main-content" tabIndex={-1} className="shell narrow">
       {document
         ? <><p className="muted legal-document-meta">Version {document.version}{document.approvedAt ? ` · effective ${document.approvedAt.toISOString().slice(0, 10)}` : ""}</p><LegalText markdown={document.bodyMd} /></>
