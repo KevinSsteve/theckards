@@ -62,6 +62,15 @@ describe("the middleware", () => {
       expect(matcher.test(data), data).toBe(false);
     }
   });
+
+  // Next.js answers every unknown path with its HTML 404 page. The passive scan found it served without the policy
+  // under /api/ and under each prefix the matcher used to exclude, so exclusions are exact paths now.
+  it("covers the HTML 404 page under paths next to the excluded ones", () => {
+    const matcher = new RegExp(`^${config.matcher[0]}$`);
+    for (const path of ["/api", "/healthz/x", "/healthzx", "/readyz/x", "/.well-known/other", "/icon.svgx", "/favicon.ico", "/_next/other"]) {
+      expect(matcher.test(path), path).toBe(true);
+    }
+  });
 });
 
 describe("pages the policy can run", () => {
@@ -148,6 +157,16 @@ describe("code the browser runs", () => {
     }
     expect([...seen].some((file) => file.endsWith("seal-mark.ts")), "the walk reaches the domain package").toBe(true);
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("an /api path no route handles", () => {
+  it("answers a JSON 404 for every method, instead of the HTML page the middleware does not cover", async () => {
+    const route = await readFile(path.join(appRoot, "api", "[...path]", "route.ts"), "utf8");
+    expect(route).toMatch(/withRoute\(\{ auth: "public" \}/);
+    expect(route).toMatch(/new ProblemError\(404,/);
+    expect(route).not.toMatch(/getPool|query\(|rateLimit/);
+    for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE"]) expect(route).toContain(`notFound as ${method}`);
   });
 });
 
