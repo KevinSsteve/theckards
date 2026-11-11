@@ -28,6 +28,7 @@ import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import * as appscaling from "aws-cdk-lib/aws-applicationautoscaling";
 import * as cr from "aws-cdk-lib/custom-resources";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as budgets from "aws-cdk-lib/aws-budgets";
 import * as events from "aws-cdk-lib/aws-events";
 import * as eventTargets from "aws-cdk-lib/aws-events-targets";
 import * as guardduty from "aws-cdk-lib/aws-guardduty";
@@ -43,6 +44,8 @@ export interface AppStackProps extends cdk.StackProps {
   useAppDbCredentials: boolean;
   alertEmail?: string;
   githubRepo?: string;
+  /** Monthly spend, in USD, above which the owner is told. Forecast at 100 %, actual at 80 %. */
+  monthlyBudgetUsd?: number;
 }
 
 const CLOUDFRONT_PREFIX_LIST = "pl-3b927c52"; // com.amazonaws.global.cloudfront.origin-facing (us-east-1)
@@ -580,6 +583,77 @@ export class AppStack extends cdk.Stack {
     alarm("cdn-5xx", dist.metric5xxErrorRate({ period: cdk.Duration.minutes(5) }), 5, "CloudFront 5xx rate > 5%");
     alarm("ses-bounce", new cloudwatch.Metric({ namespace: "AWS/SES", metricName: "Reputation.BounceRate", statistic: "Average", period: cdk.Duration.minutes(15) }), 0.05, "SES bounce rate > 5%", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 1);
     alarm("ses-complaint", new cloudwatch.Metric({ namespace: "AWS/SES", metricName: "Reputation.ComplaintRate", statistic: "Average", period: cdk.Duration.minutes(15) }), 0.001, "SES complaint rate > 0.1%", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 1);
+
+    /**
+     * Is the service reachable at all? ([ADR-021](../../docs/adr/021-external-availability-check.md))
+     *
+     * Every alarm above is a symptom alarm on traffic and treats missing data as healthy, which is right for
+     * each one and a blind spot in aggregate: if DNS fails, the certificate expires or nothing reaches the
+     * service, no metric is published and a total outage renders as ten green alarms. This probe is the only
+     * thing in the account that would say otherwise, so it is the one alarm where missing data is breaching.
+     */
+    const healthCheck = new route53.CfnHealthCheck(this, "Reachability", {
+      healthCheckConfig: {
+        type: "HTTPS",
+        fullyQualifiedDomainName: domain,
+        resourcePath: "/healthz",
+        port: 443,
+        requestInterval: 30,
+        failureThreshold: 3,
+        enableSni: true,
+        measureLatency: false,
+      },
+      healthCheckTags: [{ key: "Name", value: `${p}-reachability` }],
+    });
+    const reachability = new cloudwatch.Alarm(this, "reachability", {
+      alarmName: `${p}-reachability`,
+      alarmDescription: "Theckards is unreachable from outside AWS (runbook: docs/runbooks/unreachable.md)",
+      metric: new cloudwatch.Metric({
+        namespace: "AWS/Route53",
+        metricName: "HealthCheckStatus",
+        dimensionsMap: { HealthCheckId: healthCheck.attrHealthCheckId },
+        statistic: "Minimum",
+        period: cdk.Duration.minutes(1),
+      }),
+      threshold: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+      evaluationPeriods: 2,
+      treatMissingData: cloudwatch.TreatMissingData.BREACHING,
+    });
+    reachability.addAlarmAction(act);
+    reachability.addOkAction(act);
+
+    /**
+     * Spend, in an account that hosts other projects. Without tags there is no way to tell whose bill is whose,
+     * so every resource in this stack is tagged and the budget is scoped to that tag. Cost allocation tags have
+     * to be activated once in Billing and take about a day to start appearing, so a brand new budget reads zero
+     * until that happens; it is not broken.
+     */
+    // An AppConfig deployment is a point-in-time record, not a billed resource, and tagging it forces a
+    // replacement that re-deploys the feature flags for no cost-attribution benefit. Excluded deliberately.
+    const taggingOptions = { excludeResourceTypes: ["AWS::AppConfig::Deployment"] };
+    cdk.Tags.of(this).add("Project", "theckards", taggingOptions);
+    cdk.Tags.of(this).add("Environment", envName, taggingOptions);
+    new budgets.CfnBudget(this, "MonthlyBudget", {
+      budget: {
+        budgetName: `${p}-monthly`,
+        budgetType: "COST",
+        timeUnit: "MONTHLY",
+        budgetLimit: { amount: props.monthlyBudgetUsd ?? 150, unit: "USD" },
+        costFilters: { TagKeyValue: [`user:Project$theckards`] },
+      },
+      notificationsWithSubscribers: [
+        // Forecast first, so there is time to act, then actual at the limit.
+        {
+          notification: { notificationType: "FORECASTED", comparisonOperator: "GREATER_THAN", threshold: 100, thresholdType: "PERCENTAGE" },
+          subscribers: [{ subscriptionType: "EMAIL", address: alertEmail }],
+        },
+        {
+          notification: { notificationType: "ACTUAL", comparisonOperator: "GREATER_THAN", threshold: 80, thresholdType: "PERCENTAGE" },
+          subscribers: [{ subscriptionType: "EMAIL", address: alertEmail }],
+        },
+      ],
+    });
 
     // ---------- Evidence malware scanning (ADR-020) ----------
     // GuardDuty Malware Protection for S3 as an independent feature: no detector, no fixed monthly cost.
