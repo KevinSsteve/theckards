@@ -551,7 +551,20 @@ export class AppStack extends cdk.Stack {
 
     // ---------- Alarms ----------
     const alerts = new sns.Topic(this, "Alerts", { topicName: `${p}-alerts`, masterKey: alertKey, enforceSSL: true });
-    if (props.alertEmail) alerts.addSubscription(new snsSubs.EmailSubscription(props.alertEmail));
+    /**
+     * Alarms nobody receives are worse than no alarms: they make an unwatched system look watched. Every alarm
+     * below publishes here, so this stack refuses to synthesize without a destination, the same way mail
+     * forwarding does. The address defaults to the operator mailbox already supplied for forwarding, so the
+     * existing deploy command gains a subscription instead of needing a new flag.
+     *
+     * An email subscription is only live once the recipient confirms it, so after a first deploy the
+     * confirmation link has to be opened. `docs/runbooks/alerts-not-delivered.md` explains how to check.
+     */
+    const alertEmail = props.alertEmail ?? forwardTo;
+    if (!alertEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(alertEmail)) {
+      throw new Error("No alarm destination. Pass -c alertEmail=... or set THECKARDS_MAIL_FORWARD_TO before synth or deploy.");
+    }
+    alerts.addSubscription(new snsSubs.EmailSubscription(alertEmail));
     const act = new cwActions.SnsAction(alerts);
     const alarm = (id: string, metric: cloudwatch.IMetric, threshold: number, desc: string, op = cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, periods = 2) => {
       const a = new cloudwatch.Alarm(this, id, { alarmName: `${p}-${id}`, alarmDescription: `${desc} (runbook: docs/runbooks/${id}.md)`, metric, threshold, evaluationPeriods: periods, comparisonOperator: op, treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING });
