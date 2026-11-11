@@ -445,7 +445,12 @@ input[type="file"]::file-selector-button {
 /* The consent box on every signing form. 20 px instead of the browser's 13, inside a label that is itself the
    click target, so it is easy to hit on a phone. */
 input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); height: 1.25rem; margin: 0 .5rem 0 0; min-height: 0; padding: 0; vertical-align: -.25rem; width: 1.25rem; }
-label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) { font-weight: 520; line-height: 1.55; }
+label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) {
+  font-weight: 520;
+  line-height: 1.55;
+  min-height: 1.75rem;
+  padding-block: .125rem;
+}
 form > .button, form > button { margin-top: 1rem; }
 form .actions > .button, form .actions > button { margin-top: 0; }
 .note-field { max-width: 320px; }
@@ -502,7 +507,7 @@ blockquote {
 /* A replaced proposal. The text says so too; colour only supports it (WCAG 1.4.1). */
 .superseded { color: var(--muted); }
 
-.legal-text { max-width: 68ch; }
+.legal-text { max-width: 68ch; overflow-wrap: anywhere; }
 .legal-text h1 { font-size: clamp(2rem, 5vw, 3.25rem); letter-spacing: -.035em; }
 .legal-text h2 { font-size: 1.35rem; margin-top: 2.25rem; }
 .legal-text h3 { margin-top: 1.65rem; }
