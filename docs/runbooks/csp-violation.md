@@ -4,12 +4,12 @@
 starts, or a page loads but nothing on it responds. The browser console shows a line starting with
 `Refused to execute`, `Refused to apply inline style`, `Refused to connect` or `Refused to evaluate`.
 
-**Why there is no alarm.** Browsers report a violation only by posting it to an endpoint the policy names, and
-every endpoint here must authenticate the caller ([production rules](../../.kiro/steering/production.md)), which a
-browser's violation report cannot do. So this failure is stopped before release instead: tests fail the build
-on a style attribute, on zod in code the browser runs, on a prerendered page and on a second, static policy
-(`apps/web/src/middleware.test.ts`), and the browser check in [security-scan](../security-scan.md) runs after each
-release that touches pages.
+**Why there is no alarm.** Browsers report a violation only by posting it, without credentials, to an endpoint
+the policy names. Such an endpoint would accept unauthenticated writes from anyone, which the
+[production rules](../../.kiro/steering/production.md) do not allow. So the known causes are stopped before
+release instead: tests fail the build on a style attribute, on zod in code the browser runs, on a prerendered page
+and on a second, static policy (`apps/web/src/middleware.test.ts`). The browser check after a release is manual for
+now ([security-scan](../security-scan.md)).
 
 ## 1. Read the refusal
 
