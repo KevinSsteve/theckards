@@ -1,11 +1,21 @@
 # S8 — Tarefas
 
 - [ ] T8.1 Domínio, HSTS, SES (DKIM/SPF/DMARC), pedido de saída do sandbox, supressão de bounces.
-- [ ] T8.2 Canary, RUM, SLOs, alarmes e runbooks essenciais; destinos de alerta configuráveis; painel de custo por acordo.
-- [ ] T8.3 k6 a 3×; restauro de backup com RTO/RPO medidos; failover testado se Multi-AZ for adotado por ADR.
+- [~] T8.2 Canary, RUM, SLOs, alarmes e runbooks essenciais; destinos de alerta configuráveis; painel de custo por acordo.
+  - Feito: os 10 alarmes passam a chegar a uma pessoa (o tópico não tinha subscritores); verificação externa de
+    disponibilidade com Route 53 em vez de canary Synthetics ([ADR-021](../../../docs/adr/021-external-availability-check.md));
+    tags em todos os recursos e orçamento de uso bruto a US$200 ([ADR-022](../../../docs/adr/022-cost-attribution-and-budget.md)).
+  - Falta: SLOs e alarmes de burn-rate, RUM, destinos de alerta no Admin, custo por acordo (precisa de um mês de custos com tags).
+- [~] T8.3 k6 a 3×; restauro de backup com RTO/RPO medidos; failover testado se Multi-AZ for adotado por ADR.
+  - Feito: restauro PITR medido em produção, 23 min 42 s e zero perda ([ADR-009](../../../docs/adr/009-rto-rpo.md)).
+  - Falta: k6; ensaio do corte (cutover) para a instância restaurada.
 - [ ] T8.4 axe + manual, Lighthouse CI, ZAP, suíte IDOR completa.
 - [ ] T8.5 Gate de build contra RASCUNHO; aprovação dos textos pelo dono no Admin → Legal.
-- [ ] T8.6 Retention sweeper; denúncias/suspensão; revisão Bedrock (retenção/treino) refletida na Privacy Policy.
+- [~] T8.6 Retention sweeper; denúncias/suspensão; revisão Bedrock (retenção/treino) refletida na Privacy Policy.
+  - Feito: sweeper no worker (`apps/worker/src/retention.ts`), só sobre dados operacionais (sessões, chaves de
+    idempotência, eventos de rate limit, OTP, outbox publicada, ledger de jobs); nunca sobre o registo, e os grants
+    da BD impedem-no mesmo que tentasse. Janelas presas por testes ao código de que dependem. Alarme + runbook.
+  - Falta: denúncias/suspensão (S11 T11.7); revisão Bedrock (bloqueada: sem acordo de modelo na conta).
 - [ ] T8.7 `docs/launch-checklist.md` com evidências; go-live.
 
 **Aceitação:** checklist da sec. 13 integralmente verde.

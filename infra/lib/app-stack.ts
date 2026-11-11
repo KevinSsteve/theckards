@@ -583,6 +583,15 @@ export class AppStack extends cdk.Stack {
     alarm("cdn-5xx", dist.metric5xxErrorRate({ period: cdk.Duration.minutes(5) }), 5, "CloudFront 5xx rate > 5%");
     alarm("ses-bounce", new cloudwatch.Metric({ namespace: "AWS/SES", metricName: "Reputation.BounceRate", statistic: "Average", period: cdk.Duration.minutes(15) }), 0.05, "SES bounce rate > 5%", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 1);
     alarm("ses-complaint", new cloudwatch.Metric({ namespace: "AWS/SES", metricName: "Reputation.ComplaintRate", statistic: "Average", period: cdk.Duration.minutes(15) }), 0.001, "SES complaint rate > 0.1%", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 1);
+    // The retention sweeper logs one line per failed pass; nothing is published while it succeeds.
+    const sweepFailures = new logs.MetricFilter(this, "RetentionSweepFailures", {
+      logGroup: workerLogs,
+      metricNamespace: "Theckards",
+      metricName: "RetentionSweepFailures",
+      filterPattern: logs.FilterPattern.stringValue("$.msg", "=", "retention sweep failed"),
+      metricValue: "1",
+    });
+    alarm("retention-sweep-failure", sweepFailures.metric({ statistic: "Sum", period: cdk.Duration.hours(1) }), 0, "Retention sweep failed", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 1);
 
     /**
      * Is the service reachable at all? ([ADR-021](../../docs/adr/021-external-availability-check.md))

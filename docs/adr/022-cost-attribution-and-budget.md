@@ -40,7 +40,8 @@ running account. A month is 730 hours.
 | Public IPv4 addresses | $0.005 per hour | 3 | $10.95 |
 | Secrets Manager | $0.40 per secret | 6 | $2.40 |
 | RDS gp3 storage | $0.115 per GB-month | 20 GB | $2.30 |
-| CloudWatch alarms | $0.10 per alarm | 11 own + 4 autoscaling | $1.50 |
+| CloudWatch alarms | $0.10 per alarm | 12 own + 4 autoscaling | $1.60 |
+| CloudWatch custom metric (retention sweep failures) | $0.30 per metric | 1 | $0.30 |
 | Route 53 health check over HTTPS ([ADR-021](021-external-availability-check.md)) | $1.00 to $2.75 | 1 | $1.00 to $2.75 |
 | KMS customer-managed keys | not returned by the Pricing API; about $1 per key | 3 | about $3 |
 | **Fixed baseline** | | | **about $160 to $162** |
