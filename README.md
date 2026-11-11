@@ -38,6 +38,7 @@ Theckards **never** handles money between the parties, gives legal advice, decid
 | --- | --- |
 | `.kiro/specs/` | Feature specs S1–S11 (requirements, design, tasks) written with Kiro |
 | `docs/kiro-usage.md` | How Kiro was used, and how to test the app |
+| `docs/design-system.md` | Interface principles, patterns, responsive behaviour and accessibility limits |
 | `docs/kiroween-*.md` | Kiroween submission copy and the demo video shot list |
 | `.kiro/steering/` | Product guardrails, tech stack and production rules applied to all work |
 | `apps/web` | Next.js app (UI and BFF API), Cognito sessions, signing, record, cases |

@@ -16,7 +16,7 @@ export function NewAgreementForm({ templates }: { templates: TemplateDefinition[
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const template = useMemo(() => templates.find((item) => item.id === templateId)!, [templates, templateId]);
-  return <form className="card" onSubmit={async (event) => {
+  return <form className="card form-card" onSubmit={async (event) => {
     event.preventDefault(); setBusy(true); setError("");
     const response = await fetch("/api/agreements", {
       method: "POST",

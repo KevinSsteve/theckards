@@ -152,20 +152,20 @@ export function AdminDashboard({ settings, documents, events, role }: { settings
   const editable = role === "OWNER";
   return <div className="admin-shell">
     <nav className="admin-nav" aria-label="Admin sections">
-      {(["overview", "settings", "legal", "audit"] as const).map((name) => <button key={name} className="secondary" onClick={() => setSection(name)}>{name[0]!.toUpperCase() + name.slice(1)}</button>)}
+      {(["overview", "settings", "legal", "audit"] as const).map((name) => <button key={name} className="secondary" aria-pressed={section === name} onClick={() => setSection(name)}>{name[0]!.toUpperCase() + name.slice(1)}</button>)}
     </nav>
-    <div>
+    <div className="admin-content">
       {section === "overview" && <>
-        <h1>Production overview</h1>
+        <header className="page-header"><p className="page-kicker">Admin</p><h1>Production overview</h1><p className="lede">Current legal readiness, environment and product scope.</p></header>
         <div className="grid">
           <section className="card"><h2>Legal readiness</h2><p>{draftCount === 0 ? "All current documents are approved." : `${draftCount} draft documents block registration and signing.`}</p></section>
           <section className="card"><h2>Environment</h2><p>Production · us-east-1</p><p className="muted">Role: {role}</p></section>
           <section className="card"><h2>Product scope</h2><p>No custody. No payments between parties. No scores or ratings.</p></section>
         </div>
       </>}
-      {section === "settings" && <><h1>Settings</h1><p className="muted">Validated, versioned and audited. Sensitive changes require a login less than five minutes old.</p>{settings.map((setting) => <SettingCard key={setting.key} initial={setting} editable={editable} />)}</>}
-      {section === "legal" && <><h1>Legal documents</h1><p className="notice">Approval is a production action. Review the full text with qualified counsel before approval. Approval requires a sign-in less than five minutes old; if it expires, use the reauthentication link shown on the document.</p>{documents.map((document) => <LegalCard key={document.id} initial={document} editable={editable} />)}</>}
-      {section === "audit" && <><h1>Audit log</h1><pre className="card audit">{JSON.stringify(events, null, 2)}</pre></>}
+      {section === "settings" && <><header className="page-header"><p className="page-kicker">Runtime configuration</p><h1>Settings</h1><p className="lede">Validated, versioned and audited. Sensitive changes require a login less than five minutes old.</p></header>{settings.map((setting) => <SettingCard key={setting.key} initial={setting} editable={editable} />)}</>}
+      {section === "legal" && <><header className="page-header"><p className="page-kicker">Production content</p><h1>Legal documents</h1></header><p className="notice">Approval is a production action. Review the full text with qualified counsel before approval. Approval requires a sign-in less than five minutes old; if it expires, use the reauthentication link shown on the document.</p>{documents.map((document) => <LegalCard key={document.id} initial={document} editable={editable} />)}</>}
+      {section === "audit" && <><header className="page-header"><p className="page-kicker">Activity</p><h1>Audit log</h1></header><pre className="card audit">{JSON.stringify(events, null, 2)}</pre></>}
     </div>
   </div>;
 }

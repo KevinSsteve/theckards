@@ -21,12 +21,12 @@ export default async function AgreementPage({ params }: { params: Promise<{ id: 
   if (!(await userHasCurrentConsents(session.userId))) redirect(`/legal/consent?next=/agreements/${id}`);
   const agreement = await getAgreement(session.userId, id);
   return <>
-    <header className="topbar"><a className="brand" href="/dashboard">Theckards</a><span>{agreement.state.replaceAll("_", " ")}</span></header>
-    <main className="shell narrow">
+    <header className="topbar"><a className="brand" href="/dashboard">Theckards</a><span className="status-badge" data-state={agreement.state}>{agreement.state.replaceAll("_", " ")}</span></header>
+    <main id="main-content" tabIndex={-1} className="shell narrow">
       <SessionEndedNotice />
-      <a href="/dashboard">← Agreements</a><h1>{agreement.title}</h1>
-      <p className="muted">Version {agreement.currentVersionNumber} · record revision {agreement.lockVersion}</p>
-      {agreement.sections.map((section) => <section className="card" key={section.heading}><h2>{section.heading}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</section>)}
+      <a className="back-link" href="/dashboard">← Agreements</a>
+      <header className="page-header"><p className="page-kicker">Agreement record</p><h1>{agreement.title}</h1><p className="page-meta">Version {agreement.currentVersionNumber} · record revision {agreement.lockVersion}</p></header>
+      {agreement.sections.map((section) => <section className="card agreement-section" key={section.heading}><h2>{section.heading}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</section>)}
       <p className="notice">Review before signing. Not legal advice. Theckards provides a verifiable record and does not handle payments between the parties.</p>
       <AgreementActions id={agreement.id} lockVersion={agreement.lockVersion} state={agreement.state} renderStatus={agreement.renderStatus}
         creatorSignedName={agreement.creatorSignedName} creatorSignedAt={agreement.creatorSignedAt}

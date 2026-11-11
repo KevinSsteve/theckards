@@ -12,7 +12,7 @@ export function ConsentForm({ next }: { next: string }) {
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  return <div className="card">
+  return <div className="card consent-card">
     <label><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} /> I have read and accept the Terms, Privacy Policy, ESIGN consent and Important Notice.</label>
     <p className="muted">You can download or export your data from Account settings. Retention depends on the data category, not your plan.</p>
     {error && <p className="error" role="alert">{error}</p>}

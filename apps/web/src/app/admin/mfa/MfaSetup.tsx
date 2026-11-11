@@ -11,7 +11,7 @@ export function MfaSetup() {
   const [secret, setSecret] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
-  return <section className="card">
+  return <section className="card mfa-card">
     {!secret ? <button onClick={async () => {
       setError("");
       const response = await fetch("/api/auth/mfa/setup", { method: "POST", headers: { "x-csrf-token": csrf() } });

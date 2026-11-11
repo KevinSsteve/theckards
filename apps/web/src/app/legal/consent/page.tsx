@@ -17,11 +17,13 @@ export default async function LegalConsentPage({ searchParams }: { searchParams:
   const session = await currentUserSession();
   if (!session) redirect("/api/auth/login");
   const documents = await currentApprovedLegal();
-  return <main className="shell narrow">
-    <a className="brand" href="/">Theckards</a>
-    <h1>Review before continuing</h1>
-    {documents.length === 0
-      ? <section className="notice"><h2>Legal review pending</h2><p>The owner has not approved the production legal documents. Registration and signing remain blocked.</p></section>
-      : <>{documents.map((document) => <article className="card" key={document.id}><p className="muted">Version {document.version} · {document.documentType}</p><LegalText markdown={document.bodyMd} /></article>)}<ConsentForm next={next} /></>}
-  </main>;
+  return <>
+    <header className="topbar"><a className="brand" href="/">Theckards</a></header>
+    <main id="main-content" tabIndex={-1} className="shell narrow">
+      <header className="page-header"><p className="page-kicker">Legal documents</p><h1>Review before continuing</h1><p className="lede">Read the current terms, privacy policy, signature consent and important notice.</p></header>
+      {documents.length === 0
+        ? <section className="notice"><h2>Legal review pending</h2><p>The owner has not approved the production legal documents. Registration and signing remain blocked.</p></section>
+        : <>{documents.map((document) => <article className="card" key={document.id}><p className="muted legal-document-meta">Version {document.version} · {document.documentType}</p><LegalText markdown={document.bodyMd} /></article>)}<ConsentForm next={next} /></>}
+    </main>
+  </>;
 }

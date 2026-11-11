@@ -27,7 +27,7 @@ export default async function AdminPage() {
   });
   const legal = documents.map((document) => ({ ...document, approvedAt: document.approvedAt?.toISOString() ?? null }));
   return <>
-    <header className="topbar"><a className="brand" href="/admin">Theckards Admin</a><div className="actions"><span className="muted">{session.adminRole}</span><LogoutButton admin /></div></header>
-    <main className="shell"><AdminDashboard settings={settings} documents={legal} events={events} role={session.adminRole!} /></main>
+    <header className="topbar"><a className="brand" href="/admin">Theckards Admin</a><div className="actions"><span className="status-badge">{session.adminRole}</span><LogoutButton admin /></div></header>
+    <main id="main-content" tabIndex={-1} className="shell"><AdminDashboard settings={settings} documents={legal} events={events} role={session.adminRole!} /></main>
   </>;
 }
