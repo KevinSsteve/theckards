@@ -20,7 +20,10 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Every path that can render a page. Not API routes, build assets, the icon, health checks or the published key
-  // set, which return data, not documents.
-  matcher: ["/((?!api/|_next/|healthz|readyz|\\.well-known/|icon\\.svg|favicon\\.ico).*)"],
+  // Everything except responses that are never a document: API routes (data, and PDFs that Chrome's viewer must be
+  // free to style; an unmatched API path answers JSON, app/api/[...path]/route.ts), build assets, and the exact
+  // paths of the health checks, the published key set and the icon. Exact, because Next.js answers any other path
+  // with its HTML 404 page, which needs the policy like every page: a prefix such as `healthz` would exempt
+  // /healthz/anything.
+  matcher: ["/((?!api/|_next/static/|healthz$|readyz$|\\.well-known/theckards-keys\\.json$|icon\\.svg$).*)"],
 };
