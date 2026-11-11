@@ -12,5 +12,5 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Every page renders per request, so its scripts carry that request's CSP nonce (src/middleware.ts). A page
   // prerendered at build time has scripts without one, and the browser would refuse to run them.
   await connection();
-  return <html lang="en"><body>{children}</body></html>;
+  return <html lang="en"><body><a className="skip-link" href="#main-content">Skip to content</a>{children}</body></html>;
 }

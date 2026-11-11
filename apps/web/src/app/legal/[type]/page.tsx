@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { currentApprovedLegal } from "../../../server/legal";
 import { LegalText } from "../../components/LegalText";
+import { PublicFooter } from "../../components/PublicFooter";
 
 export const dynamic = "force-dynamic";
 
@@ -24,10 +25,13 @@ export default async function LegalDocumentPage({ params }: { params: Promise<{ 
   const documentType = TYPES[type as keyof typeof TYPES];
   if (!documentType) notFound();
   const document = (await currentApprovedLegal()).find((d) => d.documentType === documentType);
-  return <main className="shell narrow">
-    <a className="brand" href="/">Theckards</a>
-    {document
-      ? <><p className="muted">Version {document.version}{document.approvedAt ? ` · effective ${document.approvedAt.toISOString().slice(0, 10)}` : ""}</p><LegalText markdown={document.bodyMd} /></>
-      : <><h1>Pending approval</h1><p>This document has not been published yet. Registration and signing stay closed until it is approved.</p></>}
-  </main>;
+  return <>
+    <header className="topbar"><a className="brand" href="/">Theckards</a><a href="/verify">Verify a record</a></header>
+    <main id="main-content" tabIndex={-1} className="shell narrow">
+      {document
+        ? <><p className="muted legal-document-meta">Version {document.version}{document.approvedAt ? ` · effective ${document.approvedAt.toISOString().slice(0, 10)}` : ""}</p><LegalText markdown={document.bodyMd} /></>
+        : <section className="empty-state"><p className="page-kicker">Legal document</p><h1>Pending approval</h1><p>This document has not been published yet. Registration and signing stay closed until it is approved.</p></section>}
+    </main>
+    <PublicFooter />
+  </>;
 }

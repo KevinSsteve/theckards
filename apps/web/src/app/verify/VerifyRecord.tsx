@@ -60,7 +60,7 @@ export function VerifyRecord({ expectedSeal }: { expectedSeal: string | null }) 
   }
 
   const sealMatches = !!result?.valid && (!expectedSeal || result.seal_id?.toLowerCase() === expectedSeal);
-  return <section className="card">
+  return <section className="card verification-card">
     <h2>Choose what to verify</h2>
     <label htmlFor="verify-file">PDF file (stays on this device)</label>
     {/* Not `disabled` while hashing: that would drop focus to the page. The picker simply refuses to reopen. */}

@@ -11,5 +11,12 @@ export default async function NewAgreementPage() {
   const session = await currentUserSession();
   if (!session) redirect("/api/auth/login");
   if (!(await userHasCurrentConsents(session.userId))) redirect("/legal/consent");
-  return <main className="shell narrow"><a href="/dashboard">← Agreements</a><h1>New agreement</h1><p>Choose a template and enter only the facts the agreement needs.</p><NewAgreementForm templates={Object.values(templateDefinitions)} /></main>;
+  return <>
+    <header className="topbar"><a className="brand" href="/dashboard">Theckards</a></header>
+    <main id="main-content" tabIndex={-1} className="shell narrow">
+      <a className="back-link" href="/dashboard">← Agreements</a>
+      <header className="page-header"><p className="page-kicker">New record</p><h1>New agreement</h1><p className="lede">Choose a template and enter only the facts the agreement needs.</p></header>
+      <NewAgreementForm templates={Object.values(templateDefinitions)} />
+    </main>
+  </>;
 }
