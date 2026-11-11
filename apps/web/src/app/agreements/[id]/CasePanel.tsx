@@ -96,7 +96,7 @@ export function CasePanel({ id }: { id: string }) {
 
     {showCase && c && <>
       <p><strong>{c.status === "OPEN" ? "Open" : "Resolved"}</strong> · opened by {c.openedBy}{c.openedByMe ? " (you)" : ""} on {date(c.openedAt)}</p>
-      <blockquote style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{c.reason}</blockquote>
+      <blockquote className="verbatim">{c.reason}</blockquote>
       {c.status === "OPEN" && <p className="muted">Evidence window (informational only, nothing happens automatically): until {date(c.evidenceWindowEndsAt)}.</p>}
 
       <h3>Proposals</h3>
@@ -104,7 +104,7 @@ export function CasePanel({ id }: { id: string }) {
       <ol className="timeline">
         {c.proposals.map((p) => <li key={p.id}>
           <span className="muted">{date(p.createdAt)} · {p.author}{p.mine ? " (you)" : ""}{p.current ? "" : " · replaced by a newer proposal"}{p.accepted ? " · accepted" : ""}</span>
-          <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", opacity: p.current ? 1 : 0.6 }}>{p.body}</div>
+          <div className={p.current ? "verbatim" : "verbatim superseded"}>{p.body}</div>
           {p.canAccept && <Button busy={busy} onClick={async () => {
             if (window.confirm(`Accept this proposal from ${p.author}? A resolution addendum with exactly this text will be prepared for both of you to sign.`) && await post(`/proposals/${p.id}/accept`)) setAcceptedId(p.id);
           }}>Accept this proposal</Button>}
@@ -118,7 +118,7 @@ export function CasePanel({ id }: { id: string }) {
 
       {c.addendum && <div className="card">
         <h3 ref={addendumHeading} tabIndex={-1}>Resolution addendum</h3>
-        {c.addendum.sections.map((s) => <div key={s.heading}><strong>{s.heading}</strong>{s.paragraphs.map((t) => <p key={t} style={{ whiteSpace: "pre-wrap" }}>{t}</p>)}</div>)}
+        {c.addendum.sections.map((s) => <div key={s.heading}><strong>{s.heading}</strong>{s.paragraphs.map((t) => <p key={t} className="verbatim">{t}</p>)}</div>)}
         {c.addendum.renderStatus === "READY" && <p><a className="button secondary" href={`/api/agreements/${id}/case/addendum/preview`} target="_blank" rel="noreferrer">Open the exact addendum PDF</a></p>}
         {c.addendum.renderStatus !== "READY" && c.addendum.status !== "CANCELLED" && <p className="muted" aria-live="polite">The addendum document is being generated…</p>}
         <p>Signatures: {c.addendum.signatures.length === 0 ? "none yet" : c.addendum.signatures.map((s) => `${s.name}${s.mine ? " (you)" : ""} on ${date(s.signedAt)}`).join("; ")}</p>

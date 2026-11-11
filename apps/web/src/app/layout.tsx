@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import "./globals.css";
 
 // Every page names itself and the template appends the product, so tabs, history and screen readers can tell
@@ -7,6 +8,9 @@ export const metadata = {
   description: "Create, sign and verify everyday agreements.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Every page renders per request, so its scripts carry that request's CSP nonce (src/middleware.ts). A page
+  // prerendered at build time has scripts without one, and the browser would refuse to run them.
+  await connection();
   return <html lang="en"><body>{children}</body></html>;
 }

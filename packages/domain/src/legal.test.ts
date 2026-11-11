@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { legalDocumentApprovalBlockers } from "./legal.js";
+import { legalDocumentApprovalBlockers } from "./legal-approval.js";
 
 describe("legal document approval guard", () => {
   it("blocks an obviously truncated Terms document even without placeholders", () => {
