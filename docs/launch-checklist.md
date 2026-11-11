@@ -26,7 +26,8 @@ https://theckards.linkealls.com.
 | Public verification works without an account | `/verify` hashes locally; valid hash returns the seal, one character changed returns no match. Checked for all three kinds: FINAL, ADDENDUM, DOSSIER. |
 | Dossier verifies itself | `scripts/verify-dossier.mjs`, which imports none of the application code, passes all eight checks against a dossier built in production, including the ECDSA signature against the published key. |
 | Alarms reach a person (R-OPS-1) | **Fixed on 2026-11-11.** Ten alarms existed and the topic they publish to had zero subscribers, so nothing could ever be delivered. The stack now refuses to synthesize without a destination. See [alerts-not-delivered](runbooks/alerts-not-delivered.md). |
-| A runbook for each predictable failure | 18 runbooks in [`docs/runbooks/`](runbooks/); each alarm's description names its runbook file. |
+| **RTO and RPO measured, not assumed** (R-OPS-5, recovery half) | Point-in-time restore performed in production on 2026-11-11: database available in **23 min 42 s** against a 4-hour RTO, recovery point trailing the present by **3 min 40 s** against a 5-minute RPO. The restored copy matched production exactly: 35 tables, identical row counts across twelve tables, the three most recent seals identical by id and SHA-256, and the `schema_migrations` revoke still in force. Numbers and caveats in [ADR-009](adr/009-rto-rpo.md); procedure in [backup-restore](runbooks/backup-restore.md). |
+| A runbook for each predictable failure | 19 runbooks in [`docs/runbooks/`](runbooks/); each alarm's description names its runbook file. |
 | Decision records | 20 ADRs in [`docs/adr/`](adr/), each with the fixed monthly cost, the simpler alternative and the operational risk. |
 
 ## Not done, and what it would take
@@ -35,7 +36,7 @@ https://theckards.linkealls.com.
 | --- | --- |
 | R-OPS-2 SLOs with burn-rate alarms | Not defined. The ten alarms are threshold alarms on symptoms (5xx, queue age, DLQ depth, CPU, storage), not error-budget burn rates. Needs the SLOs written down first; a burn-rate alarm on an undefined objective is theatre. |
 | R-OPS-3 Canary every 5 minutes | Not built. CloudWatch Synthetics is not free: roughly US$0.0012 per run, about US$10/month at a five-minute cadence, so it needs an ADR on whether that is worth it before go-live. |
-| R-OPS-5 Load test at 3× target, measured RTO/RPO | Not done. No k6 run, and no restore has been rehearsed, so the RTO and RPO in [ADR-009](adr/009-rto-rpo.md) are design targets rather than measurements. A restore drill into a throwaway instance is the next step and costs only the instance hours. |
+| R-OPS-5 Load test at 3× target | Not done. No k6 run. |
 | R-A11Y-1 WCAG 2.2 AA, Lighthouse CI | Not verified. The UI is plain semantic HTML with labelled inputs and `aria-live` on the polling regions, which is a good start, but no axe or Lighthouse run has been recorded. |
 | R-SEC-3 DAST (ZAP) | Not run. |
 | R-EML-1 SES out of sandbox, DKIM/SPF/DMARC, bounce suppression | **Blocked by AWS.** SES production access was denied, so email delivery is off (`EMAIL_DELIVERY_ENABLED=false`) and signing happens in person by QR code instead ([ADR-018](adr/018-in-person-qr-signing.md)). Bounce and complaint alarms exist and are wired. |
@@ -49,6 +50,7 @@ https://theckards.linkealls.com.
 1. **Confirm the alarm subscription.** AWS emails a confirmation link to the operator mailbox; until it is
    opened, `SubscriptionArn` reads `PendingConfirmation` and no alert is delivered. Check with the command in
    [alerts-not-delivered](runbooks/alerts-not-delivered.md).
-2. **Rehearse a restore.** Until a backup has been restored once, the recovery plan is untested.
+2. **Practise the cutover.** The restore drill proved the data comes back. It did not prove anyone can put it
+   back into service under pressure, which is the untested half of the 4-hour objective.
 3. **Decide on the canary** with an ADR, since it is the first item here with a recurring cost.
 4. **Tag the stack and set a budget**, so spend is attributable in an account that hosts other projects.
