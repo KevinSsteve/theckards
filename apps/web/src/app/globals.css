@@ -134,22 +134,23 @@ button[aria-disabled="true"] { cursor: progress; opacity: .62; }
   backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--line);
   display: flex;
-  flex-wrap: wrap;
-  gap: .8rem 1rem;
+  flex-wrap: nowrap;
+  gap: .5rem .75rem;
   justify-content: space-between;
-  min-height: 4.5rem;
-  padding: .75rem max(1rem, calc((100vw - var(--content)) / 2 + 1rem));
+  min-height: 3.25rem;
+  padding: .38rem max(1rem, calc((100vw - var(--content)) / 2 + 1.5rem));
   position: relative;
   z-index: 10;
 }
-.topbar .actions { margin-left: auto; }
-.topbar .button, .topbar button { min-height: 2.5rem; padding: .58rem .88rem; }
+.topbar .actions { flex-wrap: nowrap; gap: .45rem; margin-left: auto; }
+.topbar .button, .topbar button { font-size: .88rem; min-height: 2.25rem; padding: .48rem .72rem; }
 .topbar > a:not(.brand):not(.button), .topbar .actions > a:not(.button) {
   align-items: center;
   color: var(--ink);
   display: inline-flex;
+  font-size: .9rem;
   font-weight: 650;
-  min-height: 2.5rem;
+  min-height: 2.25rem;
   text-decoration: none;
 }
 .topbar > a:not(.brand):not(.button):hover, .topbar .actions > a:not(.button):hover { color: var(--accent); }
@@ -157,23 +158,19 @@ button[aria-disabled="true"] { cursor: progress; opacity: .62; }
   align-items: center;
   color: var(--ink);
   display: inline-flex;
-  font-size: 1.05rem;
-  font-weight: 780;
-  gap: .65rem;
-  letter-spacing: -.02em;
-  line-height: 1;
-  text-decoration: none;
-  white-space: nowrap;
-}
-.brand::before {
-  background: var(--accent);
-  border: .38rem solid var(--accent-soft);
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px #9fc9b5;
-  content: "";
   flex: 0 0 auto;
-  height: 1.65rem;
-  width: 1.65rem;
+  gap: .55rem;
+  line-height: 1;
+  min-height: 2.25rem;
+  text-decoration: none;
+}
+.brand-logo { display: block; height: 1.5rem; max-width: none; width: auto; }
+.brand-context {
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+  font-size: .8rem;
+  font-weight: 750;
+  padding-left: .55rem;
 }
 .brand:hover { color: var(--ink); text-decoration: none; }
 
@@ -585,6 +582,7 @@ pre.audit {
   padding: 2rem clamp(1rem, 3vw, 1.5rem);
 }
 .footer-inner p { color: var(--muted); font-size: .86rem; margin: .3rem 0 0; }
+.site-footer .brand-logo { height: 1.3rem; }
 .footer-nav { display: flex; flex-wrap: wrap; gap: .65rem 1.25rem; justify-content: flex-end; }
 .footer-nav a { align-items: center; color: var(--muted); display: inline-flex; font-size: .88rem; font-weight: 650; min-height: 2rem; text-decoration: none; }
 .footer-nav a:hover { color: var(--accent); }
@@ -620,14 +618,13 @@ pre.audit {
 
 @media (max-width: 560px) {
   h1 { font-size: clamp(2rem, 10.5vw, 2.75rem); }
-  .topbar { align-items: center; padding: .72rem 1rem; }
-  .topbar > .actions {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-    margin-left: 0;
-    width: 100%;
-  }
+  .topbar { gap: .4rem; padding: .3rem .75rem; }
+  .topbar > .actions { display: flex; margin-left: auto; width: auto; }
   .topbar > .actions > * { justify-content: center; text-align: center; }
+  .topbar .button, .topbar button { font-size: .82rem; min-height: 2.125rem; padding: .42rem .58rem; }
+  .topbar > a:not(.brand):not(.button), .topbar .actions > a:not(.button) { font-size: .84rem; min-height: 2.125rem; }
+  .brand-logo { height: 1.15rem; }
+  .brand-context { display: none; }
   .shell { padding: 2.3rem 1rem 5rem; }
   .hero { gap: 2.75rem; padding-top: 2.25rem; }
   .hero h1 { font-size: clamp(2.75rem, 14vw, 4rem); }

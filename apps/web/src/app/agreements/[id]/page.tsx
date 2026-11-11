@@ -1,3 +1,4 @@
+import { Brand } from "../../components/Brand";
 import { redirect } from "next/navigation";
 import { getAgreement } from "../../../server/agreements";
 import { currentUserSession } from "../../../server/auth/current";
@@ -21,7 +22,7 @@ export default async function AgreementPage({ params }: { params: Promise<{ id: 
   if (!(await userHasCurrentConsents(session.userId))) redirect(`/legal/consent?next=/agreements/${id}`);
   const agreement = await getAgreement(session.userId, id);
   return <>
-    <header className="topbar"><a className="brand" href="/dashboard">Theckards</a><span className="status-badge" data-state={agreement.state}>{agreement.state.replaceAll("_", " ")}</span></header>
+    <header className="topbar"><Brand href="/dashboard" /><span className="status-badge" data-state={agreement.state}>{agreement.state.replaceAll("_", " ")}</span></header>
     <main id="main-content" tabIndex={-1} className="shell narrow">
       <SessionEndedNotice />
       <a className="back-link" href="/dashboard">← Agreements</a>

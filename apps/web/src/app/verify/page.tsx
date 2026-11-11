@@ -1,3 +1,4 @@
+import { Brand } from "../components/Brand";
 import { PublicFooter } from "../components/PublicFooter";
 import { VerifyRecord } from "./VerifyRecord";
 
@@ -7,7 +8,7 @@ export default async function VerifyPage({ searchParams }: { searchParams: Promi
   const { seal } = await searchParams;
   const expectedSeal = seal && /^[0-9a-f-]{36}$/i.test(seal) ? seal.toLowerCase() : null;
   return <>
-    <header className="topbar"><a className="brand" href="/">Theckards</a><a href="/verify/how">How to verify offline</a></header>
+    <header className="topbar"><Brand /><a href="/verify/how">How to verify offline</a></header>
     <main id="main-content" tabIndex={-1} className="shell narrow">
       <header className="page-header"><p className="page-kicker">Public verification</p><h1>Verify a Theckards record</h1><p className="lede">Select a PDF or paste its SHA-256. Your browser computes the hash locally. The PDF is never uploaded to Theckards.</p></header>
       {expectedSeal && <p className="notice">This verification was opened for seal <code>{expectedSeal}</code>. Select the PDF and we will also confirm that it belongs to this seal.</p>}

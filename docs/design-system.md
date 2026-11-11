@@ -52,8 +52,8 @@ adding colours.
 
 ## Patterns
 
-- **Top bar.** The mark and product name lead. At 560 px, groups move to a second row instead of squeezing or
-  overlapping.
+- **Top bar.** The supplied symbol-and-wordmark lockup leads. The bar is 52 px high; its compact controls are
+  34–36 px high and stay on one row down to 320 px.
 - **Page header.** An optional uppercase kicker, one `h1`, a short lead and an optional primary action.
 - **Card.** One topic or one action. The first and last children own no outside margin.
 - **Status badge.** Text plus a dot. Red is used only for failed, cancelled, unavailable or withdrawn states.
@@ -72,7 +72,7 @@ adding colours.
 | --- | --- |
 | Above 760 px | Two-column home, Admin side navigation, flexible grids. |
 | 560–760 px | One-column home and Admin content; Admin navigation is horizontal while all four items fit. |
-| 320–560 px | Top-bar action groups take their own row; main action groups stack; grids are one column; Admin navigation is 2×2; definition lists and seal results stack. |
+| 320–560 px | The compact logo and header controls remain on one row; main action groups stack; grids are one column; Admin navigation is 2×2; definition lists and seal results stack. |
 
 The content shell is fluid and capped at 70 rem. Reading pages are capped at 47.5 rem. Grid columns use
 `minmax(min(100%, 17rem), 1fr)`, so their minimum can never exceed the viewport.
@@ -100,7 +100,8 @@ consent, expired links, Admin settings/legal/audit, loading, error and 404.
 
 Release `c10bd27` was checked on 2026-11-11 at 320, 390, 768 and 1,440 px. Across 40 public and 24 signed-in
 route/width combinations, axe found no WCAG or best-practice violation and the document never exceeded the
-viewport. Buttons remain at least 44 px high; checkbox and radio labels are at least 28 px. The skip link transfers
+viewport. Main-flow buttons remain at least 44 px high; compact top-bar controls are 34–36 px, and every target
+remains above 24×24 px. Checkbox and radio labels are at least 28 px. The skip link transfers
 focus to the main content and normal-browser runs reported no CSP violation.
 
 Under the Lighthouse mobile throttling profile, the six measured pages stayed between 1,288 and 1,704 ms LCP and

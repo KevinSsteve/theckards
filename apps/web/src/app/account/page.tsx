@@ -1,3 +1,4 @@
+import { Brand } from "../components/Brand";
 import { redirect } from "next/navigation";
 import { currentUserSession } from "../../server/auth/current";
 import { userHasCurrentConsents } from "../../server/legal";
@@ -11,7 +12,7 @@ export default async function AccountPage() {
   if (!session) redirect("/api/auth/login");
   const accepted = await userHasCurrentConsents(session.userId);
   return <>
-    <header className="topbar"><a className="brand" href="/dashboard">Theckards</a><LogoutButton /></header>
+    <header className="topbar"><Brand href="/dashboard" /><LogoutButton /></header>
     <main id="main-content" tabIndex={-1} className="shell narrow">
       <header className="page-header"><p className="page-kicker">Account</p><h1>Your account</h1><p className="lede">Legal consent and access to your agreements.</p></header>
       <div className="grid">

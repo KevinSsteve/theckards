@@ -1,3 +1,4 @@
+import { Brand } from "../../components/Brand";
 import { redirect } from "next/navigation";
 import { currentUserSession } from "../../../server/auth/current";
 import { currentApprovedLegal } from "../../../server/legal";
@@ -18,7 +19,7 @@ export default async function LegalConsentPage({ searchParams }: { searchParams:
   if (!session) redirect("/api/auth/login");
   const documents = await currentApprovedLegal();
   return <>
-    <header className="topbar"><a className="brand" href="/">Theckards</a></header>
+    <header className="topbar"><Brand /></header>
     <main id="main-content" tabIndex={-1} className="shell narrow">
       <header className="page-header"><p className="page-kicker">Legal documents</p><h1>Review before continuing</h1><p className="lede">Read the current terms, privacy policy, signature consent and important notice.</p></header>
       {documents.length === 0

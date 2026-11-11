@@ -1,3 +1,4 @@
+import { Brand } from "../../components/Brand";
 import { cookies } from "next/headers";
 import { GUEST_COOKIE } from "../../../server/auth/cookies";
 import { loadGuestSession } from "../../../server/auth/session-store";
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Review agreement", robots: { index: false, follow: false } };
 
 function Unavailable() {
-  return <><header className="topbar"><a className="brand" href="/">Theckards</a></header><main id="main-content" tabIndex={-1} className="shell narrow empty-state"><p className="page-kicker">Invitation</p><h1>Link unavailable</h1>
+  return <><header className="topbar"><Brand /></header><main id="main-content" tabIndex={-1} className="shell narrow empty-state"><p className="page-kicker">Invitation</p><h1>Link unavailable</h1>
     <p>This invitation link is invalid, expired or was already used. Ask the person who invited you to send a new invitation.</p></main></>;
 }
 
@@ -23,7 +24,7 @@ export default async function GuestPage({ params }: { params: Promise<{ token: s
   if (!usable && !ownsSession) return <Unavailable />;
 
   return <>
-    <header className="topbar"><a className="brand" href="/">Theckards</a><span className="status-badge" data-state={invite.state}>{invite.state.replaceAll("_", " ")}</span></header>
+    <header className="topbar"><Brand /><span className="status-badge" data-state={invite.state}>{invite.state.replaceAll("_", " ")}</span></header>
     <main id="main-content" tabIndex={-1} className="shell narrow">
       <header className="page-header">
         <p className="page-kicker">Invitation for {invite.displayName}</p>

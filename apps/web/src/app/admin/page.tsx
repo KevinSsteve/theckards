@@ -1,3 +1,4 @@
+import { Brand } from "../components/Brand";
 import { redirect } from "next/navigation";
 import { currentAdminSession } from "../../server/auth/current";
 import { settingsRegistry } from "../../server/admin/settings-registry";
@@ -27,7 +28,7 @@ export default async function AdminPage() {
   });
   const legal = documents.map((document) => ({ ...document, approvedAt: document.approvedAt?.toISOString() ?? null }));
   return <>
-    <header className="topbar"><a className="brand" href="/admin">Theckards Admin</a><div className="actions"><span className="status-badge">{session.adminRole}</span><LogoutButton admin /></div></header>
+    <header className="topbar"><Brand href="/admin" admin /><div className="actions"><span className="status-badge">{session.adminRole}</span><LogoutButton admin /></div></header>
     <main id="main-content" tabIndex={-1} className="shell"><AdminDashboard settings={settings} documents={legal} events={events} role={session.adminRole!} /></main>
   </>;
 }

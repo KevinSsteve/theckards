@@ -34,8 +34,9 @@ checked again against the exact production HTML on 2026-11-11.
   measured at 16.66:1 and 15.89:1. This is recorded as a resolved tool limitation, not silently counted as a pass.
 - **Reflow:** no horizontal page scroll in any combination. The long agreement, legal email, seal IDs, hashes,
   code display, forms, footer and Admin-shaped content all remain inside 320 px.
-- **Targets:** no application control target under 24×24 px. Buttons are at least 44 px high. The visible radio and
-  checkbox are 20 px, inside labels measuring 28 px for a one-line radio and 74 px for the consent statement.
+- **Targets:** no application control target under 24×24 px. Main-flow buttons are at least 44 px high; compact
+  top-bar controls are 34–36 px. The visible radio and checkbox are 20 px, inside labels measuring 28 px for a
+  one-line radio and 74 px for the consent statement.
 - **Keyboard and CSP:** the first Tab reveals “Skip to content”; activation moves focus to `MAIN#main-content`.
   Normal-browser checks reported no CSP violation on any public or authenticated page. `/verify` still hashed the
   sealed fixture locally and displayed `SEAL A9B3 B22E`.

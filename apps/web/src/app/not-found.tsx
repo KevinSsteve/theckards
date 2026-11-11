@@ -1,3 +1,4 @@
+import { Brand } from "./components/Brand";
 import { PublicFooter } from "./components/PublicFooter";
 
 export const metadata = { title: "Page not found" };
@@ -5,7 +6,7 @@ export const metadata = { title: "Page not found" };
 /** Replaces the framework default, which had no main landmark and no way back. */
 export default function NotFound() {
   return <>
-    <header className="topbar"><a className="brand" href="/">Theckards</a></header>
+    <header className="topbar"><Brand /></header>
     <main id="main-content" tabIndex={-1} className="shell narrow empty-state">
       <p className="page-kicker">404</p>
       <h1>Page not found</h1>
