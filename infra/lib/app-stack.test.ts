@@ -132,6 +132,10 @@ describe("the SLO dashboard and operating links", () => {
     expect(body).toContain("30-day sample coverage");
     expect(body).toContain("IF(failure >= 0, 100 * (1 - failure), -1)");
     expect(body).toContain("-1 means no eligible previews");
+    expect(body).toContain("PDF preview burn rate");
+    expect(body).toContain("#d13212");
+    expect(body).toContain("#ff9900");
+    expect(body).toContain("failure0 / 0.01");
     expect(body).not.toContain("setPeriodToTimeRange");
     expect(body).not.toMatch(/query|SOURCE|filter @message/i);
   });
