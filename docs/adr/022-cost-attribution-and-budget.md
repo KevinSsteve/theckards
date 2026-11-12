@@ -40,22 +40,25 @@ running account. A month is 730 hours.
 | Public IPv4 addresses | $0.005 per hour | 3 | $10.95 |
 | Secrets Manager | $0.40 per secret | 6 | $2.40 |
 | RDS gp3 storage | $0.115 per GB-month | 20 GB | $2.30 |
-| CloudWatch alarms | $0.10 per alarm | 12 own + 4 autoscaling | $1.60 |
-| CloudWatch custom metric (retention sweep failures) | $0.30 per metric | 1 | $0.30 |
+| CloudWatch standard alarms | $0.10 per alarm metric | 21 own + 4 autoscaling | $2.50 |
+| CloudWatch composite alarms ([ADR-023](023-slos-and-burn-rate.md)) | $0.50 per alarm | 2 | $1.00 |
+| CloudWatch custom metric series | $0.30 per metric | up to 8 (retention + 7 SLO gauges) | up to $2.40 |
+| CloudWatch SLO dashboard | $3.00 after the first three account-wide | fifth dashboard in the account | $3.00 |
+| CloudWatch PutMetricData | $0.01 per 1,000 above the account allowance | about 43,800/month | up to $0.44 |
 | Route 53 health check over HTTPS ([ADR-021](021-external-availability-check.md)) | $1.00 to $2.75 | 1 | $1.00 to $2.75 |
 | KMS customer-managed keys | not returned by the Pricing API; about $1 per key | 3 | about $3 |
-| **Fixed baseline** | | | **about $160 to $162** |
+| **Fixed baseline** | | | **about $167 to $170** |
 
 Usage on top is small at today's traffic: ALB capacity units, NAT data processing, CloudWatch Logs, ECR storage
 (5.2 GB, about $0.52), S3, CloudFront requests and Cognito, which is inside its free tier. Call the month
-**about US$165 to $175**.
+**about US$172 to $183**.
 
 AWS Budgets itself is free for a budget without actions: the Pricing API lists `BudgetsUsage` at $0.00 per
 budget-day. Only action-enabled budgets are billed, and this one has no actions.
 
 ## Why US$200, and what it will and will not catch
 
-The limit sits about 15 to 20 % above a normal month, so a normal month never alerts and an alert always means
+The limit sits about 9 to 16 % above a normal month, so a normal month never alerts and an alert always means
 something changed. A first draft used US$150 with an actual alert at 80 %. Against this baseline it would have
 fired every month, and an alarm that always fires teaches people to ignore the channel that works.
 

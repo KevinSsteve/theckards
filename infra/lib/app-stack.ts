@@ -436,6 +436,10 @@ export class AppStack extends cdk.Stack {
     const workerTask = mkTask("worker", 512, 1024);
     jobs.grantConsumeMessages(workerTask.taskRole);
     jobs.grantSendMessages(workerTask.taskRole);
+    workerTask.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: ["cloudwatch:PutMetricData"], resources: ["*"],
+      conditions: { StringEquals: { "cloudwatch:namespace": "Theckards/SLO" } },
+    }));
     workerTask.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["kms:Sign", "kms:GetPublicKey", "kms:DescribeKey"], resources: [sealKey.keyArn] }));
     quarantine.grantRead(workerTask.taskRole);
     quarantine.grantDelete(workerTask.taskRole);
@@ -569,20 +573,28 @@ export class AppStack extends cdk.Stack {
     }
     alerts.addSubscription(new snsSubs.EmailSubscription(alertEmail));
     const act = new cwActions.SnsAction(alerts);
-    const alarm = (id: string, metric: cloudwatch.IMetric, threshold: number, desc: string, op = cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, periods = 2) => {
-      const a = new cloudwatch.Alarm(this, id, { alarmName: `${p}-${id}`, alarmDescription: `${desc} (runbook: docs/runbooks/${id}.md)`, metric, threshold, evaluationPeriods: periods, comparisonOperator: op, treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING });
+    const alarm = (
+      id: string,
+      metric: cloudwatch.IMetric,
+      threshold: number,
+      desc: string,
+      op = cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      periods = 2,
+      runbook = id,
+    ) => {
+      const a = new cloudwatch.Alarm(this, id, { alarmName: `${p}-${id}`, alarmDescription: `${desc} (runbook: docs/runbooks/${runbook}.md)`, metric, threshold, evaluationPeriods: periods, comparisonOperator: op, treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING });
       a.addAlarmAction(act); a.addOkAction(act);
     };
-    alarm("alb-5xx", alb.metrics.httpCodeElb(elbv2.HttpCodeElb.ELB_5XX_COUNT, { period: cdk.Duration.minutes(1) }), 5, "ALB 5xx");
+    alarm("alb-5xx", alb.metrics.httpCodeElb(elbv2.HttpCodeElb.ELB_5XX_COUNT, { period: cdk.Duration.minutes(1) }), 5, "ALB 5xx", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 2, "target-5xx");
     alarm("target-5xx", alb.metrics.httpCodeTarget(elbv2.HttpCodeTarget.TARGET_5XX_COUNT, { period: cdk.Duration.minutes(1) }), 10, "Web 5xx");
-    alarm("web-unhealthy", targetGroup.metrics.unhealthyHostCount({ period: cdk.Duration.minutes(1) }), 0, "Unhealthy web tasks");
-    alarm("jobs-dlq", dlq.metricApproximateNumberOfMessagesVisible({ period: cdk.Duration.minutes(1) }), 0, "Messages in DLQ", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 1);
-    alarm("jobs-age", jobs.metricApproximateAgeOfOldestMessage({ period: cdk.Duration.minutes(1) }), 300, "Queue stalled (oldest message > 5 min)");
-    alarm("db-cpu", db.metricCPUUtilization({ period: cdk.Duration.minutes(5) }), 80, "RDS CPU high", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 3);
-    alarm("db-storage", db.metricFreeStorageSpace({ period: cdk.Duration.minutes(5) }), 5 * 1024 ** 3, "RDS free storage < 5 GB", cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD, 1);
-    alarm("cdn-5xx", dist.metric5xxErrorRate({ period: cdk.Duration.minutes(5) }), 5, "CloudFront 5xx rate > 5%");
-    alarm("ses-bounce", new cloudwatch.Metric({ namespace: "AWS/SES", metricName: "Reputation.BounceRate", statistic: "Average", period: cdk.Duration.minutes(15) }), 0.05, "SES bounce rate > 5%", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 1);
-    alarm("ses-complaint", new cloudwatch.Metric({ namespace: "AWS/SES", metricName: "Reputation.ComplaintRate", statistic: "Average", period: cdk.Duration.minutes(15) }), 0.001, "SES complaint rate > 0.1%", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 1);
+    alarm("web-unhealthy", targetGroup.metrics.unhealthyHostCount({ period: cdk.Duration.minutes(1) }), 0, "Unhealthy web tasks", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 2, "target-5xx");
+    alarm("jobs-dlq", dlq.metricApproximateNumberOfMessagesVisible({ period: cdk.Duration.minutes(1) }), 0, "Messages in DLQ", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 1, "outbox-stalled");
+    alarm("jobs-age", jobs.metricApproximateAgeOfOldestMessage({ period: cdk.Duration.minutes(1) }), 300, "Queue stalled (oldest message > 5 min)", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 2, "outbox-stalled");
+    alarm("db-cpu", db.metricCPUUtilization({ period: cdk.Duration.minutes(5) }), 80, "RDS CPU high", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 3, "database-capacity");
+    alarm("db-storage", db.metricFreeStorageSpace({ period: cdk.Duration.minutes(5) }), 5 * 1024 ** 3, "RDS free storage < 5 GB", cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD, 1, "database-capacity");
+    alarm("cdn-5xx", dist.metric5xxErrorRate({ period: cdk.Duration.minutes(5) }), 5, "CloudFront 5xx rate > 5%", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 2, "target-5xx");
+    alarm("ses-bounce", new cloudwatch.Metric({ namespace: "AWS/SES", metricName: "Reputation.BounceRate", statistic: "Average", period: cdk.Duration.minutes(15) }), 0.05, "SES bounce rate > 5%", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 1, "email-reputation");
+    alarm("ses-complaint", new cloudwatch.Metric({ namespace: "AWS/SES", metricName: "Reputation.ComplaintRate", statistic: "Average", period: cdk.Duration.minutes(15) }), 0.001, "SES complaint rate > 0.1%", cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 1, "email-reputation");
     // The retention sweeper logs one line per failed pass; nothing is published while it succeeds.
     const sweepFailures = new logs.MetricFilter(this, "RetentionSweepFailures", {
       logGroup: workerLogs,
@@ -632,6 +644,206 @@ export class AppStack extends cdk.Stack {
     reachability.addAlarmAction(act);
     reachability.addOkAction(act);
 
+    // ---------- SLOs and multi-window burn rate (ADR-023) ----------
+    const availabilityMetric = (period: cdk.Duration, statistic = "Average") => new cloudwatch.Metric({
+      namespace: "AWS/Route53",
+      metricName: "HealthCheckStatus",
+      dimensionsMap: { HealthCheckId: healthCheck.attrHealthCheckId },
+      statistic,
+      period,
+    });
+    const availabilityMinute = () => new cloudwatch.MathExpression({
+      // Route 53 should publish every minute. FILL turns a partially missing window into explicit bad minutes,
+      // instead of letting Average silently remove them from the denominator.
+      expression: "FILL(status, 0)",
+      usingMetrics: { status: availabilityMetric(cdk.Duration.minutes(1)) },
+      period: cdk.Duration.minutes(1),
+      label: "Availability minute (missing = 0)",
+    });
+    const pdfFailureRateMetric = (window: "5m" | "1h" | "30m" | "6h" | "30d") => new cloudwatch.Metric({
+      namespace: "Theckards/SLO",
+      metricName: "PdfPreviewFailureRate",
+      dimensionsMap: { Window: window },
+      statistic: "Average",
+      period: cdk.Duration.minutes(1),
+    });
+    const pdfEligible30dMetric = new cloudwatch.Metric({
+      namespace: "Theckards/SLO", metricName: "PdfPreviewEligible30d", statistic: "Average", period: cdk.Duration.minutes(1),
+    });
+    const sloPublisherHeartbeat = new cloudwatch.Metric({
+      namespace: "Theckards/SLO", metricName: "PublisherHeartbeat", statistic: "Minimum", period: cdk.Duration.minutes(1),
+    });
+    const burnComponent = (
+      id: string,
+      metric: cloudwatch.IMetric,
+      threshold: number,
+      comparisonOperator: cloudwatch.ComparisonOperator,
+      treatMissingData: cloudwatch.TreatMissingData,
+      description: string,
+      evaluationPeriods = 1,
+      datapointsToAlarm = 1,
+    ) => new cloudwatch.Alarm(this, id, {
+      alarmName: `${p}-${id}`,
+      alarmDescription: `${description}; component only, notifications come from its composite (ADR-023)`,
+      metric,
+      threshold,
+      comparisonOperator,
+      evaluationPeriods,
+      datapointsToAlarm,
+      treatMissingData,
+      actionsEnabled: false,
+    });
+
+    // 99.9% objective, rounded to whole one-minute events. FILL(status, 0) makes missing minutes bad.
+    // Fast: >1.44% is 1/5 and 1/60. Slow: >0.6% is 1/30 and 3/360.
+    const availabilityFast5m = burnComponent("slo-availability-fast-5m", availabilityMinute(), 1,
+      cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD, cloudwatch.TreatMissingData.BREACHING,
+      "At least 1 bad availability minute in 5 minutes (14.4x burn)", 5, 1);
+    const availabilityFast1h = burnComponent("slo-availability-fast-1h", availabilityMinute(), 1,
+      cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD, cloudwatch.TreatMissingData.BREACHING,
+      "At least 1 bad availability minute in 1 hour (14.4x burn)", 60, 1);
+    const availabilitySlow30m = burnComponent("slo-availability-slow-30m", availabilityMinute(), 1,
+      cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD, cloudwatch.TreatMissingData.BREACHING,
+      "At least 1 bad availability minute in 30 minutes (6x burn)", 30, 1);
+    const availabilitySlow6h = burnComponent("slo-availability-slow-6h", availabilityMinute(), 1,
+      cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD, cloudwatch.TreatMissingData.BREACHING,
+      "At least 3 bad availability minutes in 6 hours (6x burn)", 360, 3);
+
+    // 99% objective: fast burn 14.4x => 14.4% bad; slow burn 6x => 6% bad. No samples is no traffic.
+    const pdfFast5m = burnComponent("slo-pdf-preview-fast-5m", pdfFailureRateMetric("5m"), 0.144,
+      cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, cloudwatch.TreatMissingData.NOT_BREACHING, "PDF preview failures above 14.4% over 5 minutes");
+    const pdfFast1h = burnComponent("slo-pdf-preview-fast-1h", pdfFailureRateMetric("1h"), 0.144,
+      cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, cloudwatch.TreatMissingData.NOT_BREACHING, "PDF preview failures above 14.4% over 1 hour");
+    const pdfSlow30m = burnComponent("slo-pdf-preview-slow-30m", pdfFailureRateMetric("30m"), 0.06,
+      cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, cloudwatch.TreatMissingData.NOT_BREACHING, "PDF preview failures above 6% over 30 minutes");
+    const pdfSlow6h = burnComponent("slo-pdf-preview-slow-6h", pdfFailureRateMetric("6h"), 0.06,
+      cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, cloudwatch.TreatMissingData.NOT_BREACHING, "PDF preview failures above 6% over 6 hours");
+
+    const availabilityBurn = new cloudwatch.CompositeAlarm(this, "SloAvailabilityBurn", {
+      compositeAlarmName: `${p}-slo-availability-burn`,
+      alarmDescription: "Availability error budget is burning (runbook: docs/runbooks/slo-availability-burn.md)",
+      alarmRule: cloudwatch.AlarmRule.anyOf(
+        cloudwatch.AlarmRule.allOf(availabilityFast5m, availabilityFast1h),
+        cloudwatch.AlarmRule.allOf(availabilitySlow30m, availabilitySlow6h),
+      ),
+    });
+    availabilityBurn.addAlarmAction(act);
+    availabilityBurn.addOkAction(act);
+    const pdfBurn = new cloudwatch.CompositeAlarm(this, "SloPdfPreviewBurn", {
+      compositeAlarmName: `${p}-slo-pdf-preview-burn`,
+      alarmDescription: "PDF preview error budget is burning (runbook: docs/runbooks/slo-pdf-preview-burn.md)",
+      alarmRule: cloudwatch.AlarmRule.anyOf(
+        cloudwatch.AlarmRule.allOf(pdfFast5m, pdfFast1h),
+        cloudwatch.AlarmRule.allOf(pdfSlow30m, pdfSlow6h),
+      ),
+    });
+    pdfBurn.addAlarmAction(act);
+    pdfBurn.addOkAction(act);
+
+    const sloPublisherAlarm = new cloudwatch.Alarm(this, "slo-metrics-publisher", {
+      alarmName: `${p}-slo-metrics-publisher`,
+      alarmDescription: "SLO metric publisher heartbeat missing (runbook: docs/runbooks/slo-metrics-publisher.md)",
+      metric: sloPublisherHeartbeat,
+      threshold: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+      evaluationPeriods: 10,
+      datapointsToAlarm: 8,
+      treatMissingData: cloudwatch.TreatMissingData.BREACHING,
+    });
+    sloPublisherAlarm.addAlarmAction(act);
+    sloPublisherAlarm.addOkAction(act);
+
+    // Five-minute Sum/SampleCount persists for 63 days, unlike one-minute points (15 days). Show observed
+    // availability and how much of a complete 30-day sample window exists; never present missing history as 100%.
+    // Production currently publishes a statistic set with SampleCount=3 each minute, verified via GetMetricStatistics.
+    const availabilityObservedPercent = new cloudwatch.MathExpression({
+      expression: "TIME_SERIES(100 * SUM(good) / SUM(samples))",
+      usingMetrics: {
+        good: availabilityMetric(cdk.Duration.minutes(5), "Sum"),
+        samples: availabilityMetric(cdk.Duration.minutes(5), "SampleCount"),
+      },
+      period: cdk.Duration.minutes(5),
+      label: "Observed availability (%)",
+    });
+    const availabilityCoveragePercent = new cloudwatch.MathExpression({
+      expression: "TIME_SERIES(100 * SUM(samples) / 129600)",
+      usingMetrics: { samples: availabilityMetric(cdk.Duration.minutes(5), "SampleCount") },
+      period: cdk.Duration.minutes(5),
+      label: "30-day sample coverage (%)",
+    });
+    const pdfSuccessPercent = new cloudwatch.MathExpression({
+      expression: "IF(failure >= 0, 100 * (1 - failure), -1)",
+      usingMetrics: { failure: pdfFailureRateMetric("30d") },
+      period: cdk.Duration.minutes(1),
+      label: "PDF under 10s (%)",
+    });
+    const pdfBurnMetrics = (["5m", "1h", "30m", "6h"] as const).map((window, index) => {
+      const metricId = `failure${index}`;
+      return new cloudwatch.MathExpression({
+        expression: `IF(${metricId} >= 0, ${metricId} / 0.01, 0)`,
+        usingMetrics: { [metricId]: pdfFailureRateMetric(window) },
+        period: cdk.Duration.minutes(1),
+        label: `${window} burn`,
+      });
+    });
+
+    const sloDashboard = new cloudwatch.Dashboard(this, "SloDashboard", {
+      dashboardName: `${p}-slos`,
+      start: "-P30D",
+      periodOverride: cloudwatch.PeriodOverride.INHERIT,
+    });
+    sloDashboard.addWidgets(
+      new cloudwatch.SingleValueWidget({
+        title: "Availability: observed value and 30-day sample coverage",
+        metrics: [availabilityObservedPercent, availabilityCoveragePercent], width: 12, height: 4,
+        fullPrecision: true,
+      }),
+      new cloudwatch.SingleValueWidget({
+        title: "Rolling 30-day PDF SLO (-1 means no eligible previews)",
+        metrics: [pdfSuccessPercent, pdfEligible30dMetric], width: 12, height: 4,
+        fullPrecision: true,
+      }),
+    );
+    sloDashboard.addWidgets(
+      new cloudwatch.AlarmStatusWidget({ title: "Paging SLO alarms", alarms: [availabilityBurn, pdfBurn, sloPublisherAlarm], width: 12, height: 4 }),
+      new cloudwatch.TextWidget({
+        width: 12, height: 4,
+        markdown: "### Email delivery SLO: unavailable\n`EMAIL_DELIVERY_ENABLED=false`; SES access is enabled, but sanitized Delivery events are not implemented. PDF success uses `-1` for no eligible previews; no data is never shown as 100% (ADR-023).",
+      }),
+    );
+    sloDashboard.addWidgets(
+      new cloudwatch.AlarmStatusWidget({
+        title: "Availability burn windows", alarms: [availabilityFast5m, availabilityFast1h, availabilitySlow30m, availabilitySlow6h], width: 12, height: 5,
+      }),
+      new cloudwatch.AlarmStatusWidget({
+        title: "PDF preview burn windows", alarms: [pdfFast5m, pdfFast1h, pdfSlow30m, pdfSlow6h], width: 12, height: 5,
+      }),
+    );
+    const burnAnnotations = [
+      { value: 14.4, label: "fast 14.4x", color: "d13212" },
+      { value: 6, label: "slow 6x", color: "ff9900" },
+    ];
+    sloDashboard.addWidgets(
+      new cloudwatch.GraphWidget({
+        title: "Availability (5-minute minimum; burn-window alarms above are authoritative)",
+        left: [availabilityMetric(cdk.Duration.minutes(5), "Minimum")], leftYAxis: { min: 0, max: 1, label: "good" }, width: 12,
+      }),
+      new cloudwatch.GraphWidget({ title: "PDF preview burn rate", left: pdfBurnMetrics, leftAnnotations: burnAnnotations, leftYAxis: { min: 0, label: "burn" }, width: 12 }),
+    );
+    sloDashboard.addWidgets(
+      new cloudwatch.GraphWidget({
+        title: "Queue diagnostics", width: 12,
+        left: [jobs.metricApproximateAgeOfOldestMessage({ period: cdk.Duration.minutes(5) })],
+        right: [dlq.metricApproximateNumberOfMessagesVisible({ period: cdk.Duration.minutes(5) })],
+        leftYAxis: { min: 0, label: "oldest seconds" }, rightYAxis: { min: 0, label: "DLQ messages" },
+      }),
+      new cloudwatch.GraphWidget({
+        title: "Web diagnostics", width: 12,
+        left: [dist.metric5xxErrorRate({ period: cdk.Duration.minutes(5) }), targetGroup.metrics.unhealthyHostCount({ period: cdk.Duration.minutes(5) })],
+        leftYAxis: { min: 0 },
+      }),
+    );
+
     /**
      * Spend, in an account that hosts other projects ([ADR-022](../../docs/adr/022-cost-attribution-and-budget.md)).
      * Without tags there is no way to tell whose bill is whose, so every resource in this stack is tagged and the
@@ -648,7 +860,7 @@ export class AppStack extends cdk.Stack {
         budgetName: `${p}-monthly`,
         budgetType: "COST",
         timeUnit: "MONTHLY",
-        // The verified fixed baseline is about US$160 a month, US$165 to 175 with usage (ADR-022). The limit sits
+        // The verified fixed baseline is about US$167 to 170 a month, US$172 to 183 with usage (ADR-022). The limit sits
         // above it, so a normal month never alerts and an alert always means something changed.
         budgetLimit: { amount: props.monthlyBudgetUsd ?? 200, unit: "USD" },
         costFilters: { TagKeyValue: [`user:Project$theckards`] },

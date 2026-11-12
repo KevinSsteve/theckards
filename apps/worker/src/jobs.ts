@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
 import { DeleteMessageCommand, ReceiveMessageCommand, SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
@@ -10,7 +9,10 @@ import { pool, transaction } from "./db.js";
 import { buildDossier } from "./dossier.js";
 import { buildMime } from "./mime.js";
 import { renderAgreementPdf, type FinalSigner } from "./pdf.js";
+import { renderPdfPreview } from "./pdf-preview.js";
+import { queueEnvelopeFromOutbox, type OutboxEnvelopeRow, type QueueEnvelope } from "./queue-envelope.js";
 import { sealIdFor, sha256Hex, signReceipt } from "./seal.js";
+import { recordTerminalPdfResult } from "./slo.js";
 
 const sqs = new SQSClient({});
 const s3 = new S3Client({});
@@ -310,52 +312,23 @@ async function evidenceScanned(payload: Record<string, unknown>): Promise<void> 
   await s3.send(new DeleteObjectCommand({ Bucket: quarantineBucket, Key: key }));
 }
 
-export interface QueueEnvelope {
-  id: string;
-  topic: string;
-  payload: Record<string, unknown>;
-}
-
 export async function publishOutbox(): Promise<number> {
   if (!queueUrl) return 0;
   return transaction(async (client) => {
-    const rows = await client.query<{ id: string; topic: string; payload: Record<string, unknown> }>(`
-      SELECT id, topic, payload FROM outbox
+    const rows = await client.query<OutboxEnvelopeRow>(`
+      SELECT id, topic, payload, created_at FROM outbox
       WHERE published_at IS NULL ORDER BY created_at LIMIT 10
       FOR UPDATE SKIP LOCKED
     `);
     for (const row of rows.rows) {
       await sqs.send(new SendMessageCommand({
         QueueUrl: queueUrl,
-        MessageBody: JSON.stringify({ id: row.id, topic: row.topic, payload: row.payload }),
+        MessageBody: JSON.stringify(queueEnvelopeFromOutbox(row)),
       }));
       await client.query("UPDATE outbox SET published_at = now() WHERE id = $1", [row.id]);
     }
     return rows.rowCount ?? 0;
   });
-}
-
-async function renderPreview(payload: Record<string, unknown>): Promise<void> {
-  const agreementId = String(payload.agreementId ?? "");
-  const versionId = String(payload.versionId ?? "");
-  const result = await pool.query<{
-    title: string; template_id: TemplateId; number: number; fields: Record<string, unknown>; created_at: Date; render_status: string;
-  }>(`
-    SELECT v.title, a.template_id, v.number, v.fields, v.created_at, v.render_status
-    FROM agreement_versions v JOIN agreements a ON a.id = v.agreement_id
-    WHERE v.id = $1 AND a.id = $2
-  `, [versionId, agreementId]);
-  const version = result.rows[0];
-  if (!version) throw new Error("Agreement version not found");
-  if (version.render_status === "READY") return;
-  const bytes = await renderAgreementPdf({ agreementId, version: version.number, title: version.title, templateId: version.template_id, fields: version.fields, createdAt: version.created_at });
-  const digest = createHash("sha256").update(bytes).digest("hex");
-  const key = `agreements/${agreementId}/v${version.number}/preview.pdf`;
-  await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: bytes, ContentType: "application/pdf", Metadata: { sha256: digest, agreement: agreementId, version: String(version.number) } }));
-  await pool.query(`
-    UPDATE agreement_versions SET render_status = 'READY', document_s3_key = $2,
-      document_sha256 = $3, render_error_code = NULL WHERE id = $1
-  `, [versionId, key, digest]);
 }
 
 function escapeHtml(value: string): string {
@@ -400,7 +373,7 @@ async function alreadyProcessed(id: string): Promise<boolean> {
 export async function processEnvelope(envelope: QueueEnvelope): Promise<void> {
   if (await alreadyProcessed(envelope.id)) return;
   switch (envelope.topic) {
-    case "pdf.render": await renderPreview(envelope.payload); break;
+    case "pdf.render": await renderPdfPreview(envelope, { pool, s3, bucket }); break;
     case "email.invite": await sendInvite(envelope.payload); break;
     case "email.otp": await sendOtp(envelope.payload); break;
     case "seal.final": await sealFinal(envelope.payload); break;
@@ -417,15 +390,31 @@ export async function processEnvelope(envelope: QueueEnvelope): Promise<void> {
 
 export async function receiveAndProcess(): Promise<number> {
   if (!queueUrl) return 0;
-  const output = await sqs.send(new ReceiveMessageCommand({ QueueUrl: queueUrl, MaxNumberOfMessages: 10, WaitTimeSeconds: 20, VisibilityTimeout: 120 }));
+  const output = await sqs.send(new ReceiveMessageCommand({
+    QueueUrl: queueUrl, MaxNumberOfMessages: 10, WaitTimeSeconds: 20, VisibilityTimeout: 120,
+    MessageSystemAttributeNames: ["ApproximateReceiveCount"],
+  }));
   for (const message of output.Messages ?? []) {
     // One failing job must not block the rest of the batch; SQS redelivers it and moves it to the DLQ after 5 attempts.
+    let envelope: QueueEnvelope | undefined;
     try {
-      const envelope = JSON.parse(message.Body ?? "{}") as QueueEnvelope;
+      envelope = JSON.parse(message.Body ?? "{}") as QueueEnvelope;
       if (!envelope.id || !envelope.topic || !envelope.payload) throw new Error("Invalid queue envelope");
       await processEnvelope(envelope);
       await sqs.send(new DeleteMessageCommand({ QueueUrl: queueUrl, ReceiptHandle: message.ReceiptHandle }));
     } catch (error) {
+      const receiveCount = Number(message.Attributes?.ApproximateReceiveCount ?? 0);
+      if (envelope?.topic === "pdf.render" && receiveCount >= 5) {
+        try {
+          await recordTerminalPdfResult(pool, envelope, receiveCount, new Date());
+        } catch (metricError) {
+          // The source job still reaches the DLQ and its existing alarm. Never include the envelope or identifiers.
+          console.error(JSON.stringify({
+            level: "error", msg: "slo result failed", sli: "pdf-preview",
+            error: metricError instanceof Error ? metricError.name : "unknown",
+          }));
+        }
+      }
       const detail = error instanceof Error ? error.message.replace(/[^\s@<>"']+@[^\s@<>"']+/g, "[email]").slice(0, 200) : "unknown";
       console.error(JSON.stringify({ level: "error", msg: "job failed", messageId: message.MessageId, error: error instanceof Error ? error.name : "unknown", detail }));
     }

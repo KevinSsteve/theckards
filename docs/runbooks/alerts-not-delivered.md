@@ -3,7 +3,9 @@
 **Symptom.** An incident happened, CloudWatch shows an alarm went to `ALARM`, and no email arrived. Or the
 opposite and worse: everything looks healthy for weeks because no alarm has ever been able to reach anyone.
 
-**Why this runbook exists.** Every Theckards alarm publishes to one SNS topic, `theckards-prod-alerts`. The topic
+**Why this runbook exists.** Every paging Theckards alarm publishes to one SNS topic, `theckards-prod-alerts`.
+The burn-rate component alarms deliberately have no actions; their two composite alarms publish instead, so one
+incident produces one notification. The topic
 was created from the first deploy, but the email subscription came from a CDK context value (`-c alertEmail=`)
 that no deploy command passed, so for a time ten alarms were wired to a topic with zero subscribers. An unwatched
 system that looks watched is worse than one known to be unwatched, so the stack now refuses to synthesize without
@@ -49,10 +51,13 @@ the alarm has actions and that they are enabled:
 
 ```sh
 aws cloudwatch describe-alarms --alarm-name-prefix theckards \
-  --query 'MetricAlarms[*].{name:AlarmName,state:StateValue,enabled:ActionsEnabled,actions:AlarmActions}' --output json
+  --query '{metric:MetricAlarms[*].{name:AlarmName,state:StateValue,enabled:ActionsEnabled,actions:AlarmActions},composite:CompositeAlarms[*].{name:AlarmName,state:StateValue,enabled:ActionsEnabled,actions:AlarmActions}}' \
+  --output json
 ```
 
-`ActionsEnabled: false` on any row means someone disabled it by hand. Re-enable:
+`ActionsEnabled: false` is expected only on alarms named `theckards-prod-slo-*-fast-*` or
+`theckards-prod-slo-*-slow-*`; their composite owns the action. On any paging alarm it means someone disabled the
+action by hand. Re-enable the paging alarm:
 
 ```sh
 aws cloudwatch enable-alarm-actions --alarm-names theckards-prod-<name>

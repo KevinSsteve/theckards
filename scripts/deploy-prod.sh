@@ -16,7 +16,8 @@
 #      was done before this script, left the new code running against the old schema until the migration
 #      finished, which for a release that writes a new column means a few minutes of failed requests;
 #   3. deploy the stack;
-#   4. confirm both services run the new image and the site answers.
+#   4. confirm both services run the new image, the site answers and an SLO-enabled worker publishes a fresh
+#      heartbeat after the service is stable.
 #
 # --dry-run        run the checks in step 1 and stop.
 # --allow-red-ci   continue when CI did not pass. Only for an emergency rollback to an older release.
@@ -188,6 +189,24 @@ CODE="$(curl -s -o /dev/null -w '%{http_code}' "$SITE/healthz")"
 READY="$(curl -s "$SITE/readyz")"
 printf '%s' "$READY" | grep -q '"db":"ok"' || fail "$SITE/readyz returned $READY."
 echo "ok   healthz $CODE, readyz $READY"
+
+# SLO-enabled workers must prove that the newly stable revision can read its durable source and call PutMetricData.
+# The metric timestamp is the UTC minute boundary, so only a datapoint newer than this verification phase counts.
+if git show "$FULL:apps/worker/src/index.ts" 2>/dev/null | grep -q 'publishSloMetrics'; then
+  HEARTBEAT_AFTER="$(date -u +%FT%TZ)"
+  HEARTBEAT=""
+  for _ in $(seq 1 18); do
+    HEARTBEAT="$(aws cloudwatch get-metric-statistics --region "$REGION" \
+      --namespace Theckards/SLO --metric-name PublisherHeartbeat \
+      --start-time "$HEARTBEAT_AFTER" --end-time "$(date -u +%FT%TZ)" --period 60 --statistics Maximum \
+      --query 'sort_by(Datapoints,&Timestamp)[-1].Timestamp' --output text 2>/dev/null || true)"
+    [ -n "$HEARTBEAT" ] && [ "$HEARTBEAT" != "None" ] && break
+    sleep 10
+  done
+  [ -n "$HEARTBEAT" ] && [ "$HEARTBEAT" != "None" ] \
+    || fail "the new worker published no SLO heartbeat after $HEARTBEAT_AFTER. See docs/runbooks/slo-metrics-publisher.md."
+  echo "ok   SLO publisher heartbeat $HEARTBEAT"
+fi
 
 echo
 echo "Deployed $TAG. Log: $LOG"

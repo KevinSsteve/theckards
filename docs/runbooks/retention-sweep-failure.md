@@ -5,7 +5,8 @@
 
 **Impact.** Low and slow. Nothing user-facing depends on the sweep. While it fails, operational rows that should
 have been removed stay: dead sessions holding encrypted refresh tokens, replay-protection keys, rate-limit events
-keyed by hashed IP addresses, expired one-time codes, published outbox messages and the job ledger. The record
+keyed by hashed IP addresses, expired one-time codes, published outbox messages, the job ledger and aggregate SLO
+observations. The record
 itself is never touched by the sweep, so a failure cannot lose an agreement, a signature or a seal.
 
 ## How the sweep works
@@ -21,9 +22,10 @@ deletes in batches of 1,000 rows by `ctid`, up to 100 batches per table per pass
 | `rate_limit_events` | two days old | twice the longest window in use, 86,400 s |
 | `otp_codes` | one day after expiry | a used or expired code is never checked again |
 | `outbox` | seven days after it was **published** | SQS carries the message from there; unpublished rows are never touched |
-| `processed_jobs` | thirty days old | must outlast the jobs queue (4 days) plus the dead-letter queue (14 days) |
+| `slo_observations` | thirty-five days old | five days after leaving the rolling 30-day SLO window; rows contain no source identifier |
+| `processed_jobs` | thirty days old | must outlast the jobs queue (4 days) plus the dead-letter queue (14 days), and clears minute publication claims |
 
-Tests in `retention.test.ts` pin the last two windows to the code they depend on, and fail if a record table ever
+Tests in `retention.test.ts` pin the SLO and queue-ledger windows to the code they depend on, and fail if a record table ever
 loses the database grant that stops the application role from deleting it.
 
 ## 1. Read the failure
@@ -38,7 +40,7 @@ The failure line carries the PostgreSQL error `code`:
 
 | `code` | Meaning | Action |
 | --- | --- | --- |
-| `42501` | Permission denied | The application role lost `DELETE` on one of the six tables. Check the grants in `packages/database/src/index.ts` and re-run the migration task, which reapplies them. Never fix it by granting `DELETE` on a record table. |
+| `42501` | Permission denied | The application role lost `DELETE` on one of the seven tables. Check the grants in `packages/database/src/index.ts` and re-run the migration task, which reapplies them. Never fix it by granting `DELETE` on a record table. |
 | `57014` | Statement timeout (30 s) | A batch took too long, usually a large backlog on a table without a suitable index. The next pass continues where this one stopped. If it repeats, see step 3. |
 | `40P01` | Deadlock | Transient. The next pass retries. |
 | none, `ECONNREFUSED` or similar | The database was unreachable | Follow the database alarms first; the sweep recovers on its own. |

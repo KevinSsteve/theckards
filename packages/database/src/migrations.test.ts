@@ -186,3 +186,26 @@ describe("evidence migration (S5 part 3)", () => {
     expect(schema).toContain("version = 4 AND status = 'DRAFT'");
   });
 });
+
+describe("PDF preview SLO migration", () => {
+  it("only adds a nullable finish timestamp, without rewriting historical rows", () => {
+    const schema = migrations.find((migration) => migration.id === "0015")?.sql ?? "";
+    expect(schema.trim()).toBe("ALTER TABLE agreement_versions ADD COLUMN IF NOT EXISTS rendered_at timestamptz;");
+    expect(schema).not.toMatch(/NOT NULL|DEFAULT|UPDATE|DELETE|DROP/);
+  });
+});
+
+describe("SLO observation migration", () => {
+  it("adds only bounded, aggregate operational fields and no source identifiers", () => {
+    const schema = migrations.find((migration) => migration.id === "0016")?.sql ?? "";
+    expect(schema).toContain("CREATE TABLE IF NOT EXISTS slo_observations");
+    expect(schema).toContain("CREATE TABLE IF NOT EXISTS slo_cutovers");
+    expect(schema).toContain("eligible_after timestamptz NOT NULL");
+    expect(schema).toContain("source_hash char(64) NOT NULL UNIQUE");
+    expect(schema).toContain("failure smallint NOT NULL CHECK (failure IN (0, 1))");
+    expect(schema).toContain("elapsed_ms integer NOT NULL CHECK (elapsed_ms >= 0)");
+    expect(schema).toContain("sli IN ('pdf-preview')");
+    expect(schema).not.toMatch(/agreement|job_id|user|party|email|request|message/i);
+    expect(schema).not.toMatch(/DROP|UPDATE|DELETE/);
+  });
+});

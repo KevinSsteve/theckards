@@ -815,4 +815,37 @@ CREATE TABLE IF NOT EXISTS profile_stats_cache (
 );
 `,
   },
+  {
+    id: "0015",
+    name: "pdf_preview_slo_timestamp",
+    // R-OPS-2. Expand-only and deliberately nullable: previews completed by older workers have no trustworthy
+    // finish timestamp and must remain no-data rather than being backfilled with an invented success.
+    sql: `
+ALTER TABLE agreement_versions ADD COLUMN IF NOT EXISTS rendered_at timestamptz;
+`,
+  },
+  {
+    id: "0016",
+    name: "slo_observations",
+    // Aggregate operational evidence only: a random UUID, non-reversible source hash, closed SLI name, 0/1 result,
+    // duration and time. No agreement, raw job, user, party, email, request or message identifier is stored.
+    sql: `
+CREATE TABLE IF NOT EXISTS slo_cutovers (
+  sli text PRIMARY KEY CHECK (sli IN ('pdf-preview')),
+  eligible_after timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS slo_observations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_hash char(64) NOT NULL UNIQUE,
+  sli text NOT NULL CHECK (sli IN ('pdf-preview')),
+  failure smallint NOT NULL CHECK (failure IN (0, 1)),
+  elapsed_ms integer NOT NULL CHECK (elapsed_ms >= 0),
+  observed_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS slo_observations_window_idx ON slo_observations(sli, observed_at DESC);
+`,
+  },
 ] as const;
