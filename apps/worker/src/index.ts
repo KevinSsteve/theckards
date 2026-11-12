@@ -1,10 +1,13 @@
+import { CloudWatchClient } from "@aws-sdk/client-cloudwatch";
 import http from "node:http";
 import { pool } from "./db.js";
 import { publishOutbox, receiveAndProcess } from "./jobs.js";
+import { nextSloPublicationAt, publishSloMetrics } from "./slo.js";
 import { sweepRetention } from "./retention.js";
 
 let running = true;
 let lastPoll = Date.now();
+const cloudwatch = new CloudWatchClient({});
 
 const log = (level: string, msg: string, extra: Record<string, unknown> = {}) =>
   console.log(JSON.stringify({ level, msg, ts: new Date().toISOString(), ...extra }));
@@ -56,6 +59,24 @@ async function pause(ms: number): Promise<void> {
 }
 
 /**
+ * Publishes closed aggregate gauges from the database source of truth. All worker tasks run this loop, but a
+ * deterministic per-minute database claim lets only one publish. It recalculates the next UTC :05 boundary after
+ * every attempt, so API duration never accumulates as timer drift. Missing heartbeat pages through CloudWatch.
+ */
+async function sloLoop(): Promise<void> {
+  while (running) {
+    const now = Date.now();
+    await pause(nextSloPublicationAt(now) - now);
+    if (!running) return;
+    try {
+      await publishSloMetrics(pool, cloudwatch);
+    } catch (error) {
+      log("error", "slo metrics publish failed", { error: error instanceof Error ? error.name : "unknown" });
+    }
+  }
+}
+
+/**
  * Retention (docs/runbooks/retention-sweep-failure.md). The first pass waits a few minutes so a deploy settles,
  * then repeats every six hours. Six hours rather than daily on purpose: the timer lives in the process, and a
  * worker restarted by deploys more often than once a day would otherwise never reach its first daily run.
@@ -87,9 +108,10 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
     log("info", "shutting down", { sig });
     running = false;
     server.close();
+    cloudwatch.destroy();
     void pool.end();
     setTimeout(() => process.exit(0), 25_000).unref();
   });
 }
 
-await Promise.all([outboxLoop(), queueLoop(), retentionLoop()]);
+await Promise.all([outboxLoop(), queueLoop(), sloLoop(), retentionLoop()]);

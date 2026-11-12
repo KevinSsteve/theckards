@@ -2,7 +2,8 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
-  BATCH_SIZE, MAX_BATCHES_PER_TABLE, PROCESSED_JOB_DAYS, RATE_LIMIT_EVENT_DAYS, RETENTION_RULES, sweepRetention,
+  BATCH_SIZE, MAX_BATCHES_PER_TABLE, PROCESSED_JOB_DAYS, RATE_LIMIT_EVENT_DAYS, RETENTION_RULES,
+  SLO_OBSERVATION_DAYS, sweepRetention,
 } from "./retention.js";
 
 const root = new URL("../../../", import.meta.url).pathname;
@@ -28,7 +29,7 @@ const RECORD_TABLES = [
 describe("what the sweeper may delete", () => {
   it("touches only the operational tables around the record", () => {
     expect(RETENTION_RULES.map((rule) => rule.table).sort()).toEqual(
-      ["idempotency_keys", "otp_codes", "outbox", "processed_jobs", "rate_limit_events", "sessions"],
+      ["idempotency_keys", "otp_codes", "outbox", "processed_jobs", "rate_limit_events", "sessions", "slo_observations"],
     );
     for (const rule of RETENTION_RULES) {
       expect(rule.table).toMatch(/^[a-z_]+$/);
@@ -66,6 +67,12 @@ describe("the windows are bounded by the mechanisms they serve", () => {
     // If this finds nothing, the scan broke rather than the limits disappearing.
     expect(windows.length).toBeGreaterThan(20);
     expect(RATE_LIMIT_EVENT_DAYS * 86_400).toBeGreaterThan(Math.max(...windows));
+  });
+
+  it("keeps SLO observations beyond their 30-day reporting window", () => {
+    expect(SLO_OBSERVATION_DAYS).toBeGreaterThan(30);
+    const observations = RETENTION_RULES.find((rule) => rule.table === "slo_observations")!;
+    expect(observations.expired).toContain(`interval '${SLO_OBSERVATION_DAYS} days'`);
   });
 
   it("keeps the job ledger longer than SQS can deliver the same job again", async () => {

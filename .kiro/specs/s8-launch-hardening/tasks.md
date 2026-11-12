@@ -5,7 +5,11 @@
   - Feito: os 10 alarmes passam a chegar a uma pessoa (o tópico não tinha subscritores); verificação externa de
     disponibilidade com Route 53 em vez de canary Synthetics ([ADR-021](../../../docs/adr/021-external-availability-check.md));
     tags em todos os recursos e orçamento de uso bruto a US$200 ([ADR-022](../../../docs/adr/022-cost-attribution-and-budget.md)).
-  - Falta: SLOs e alarmes de burn-rate, RUM, destinos de alerta no Admin, custo por acordo (precisa de um mês de custos com tags).
+  - Feito (R-OPS-2, parcial): SLO de disponibilidade 99,9% e de preview PDF <10 s em 99%, ambos com
+    janelas 5m/1h a 14,4× e 30m/6h a 6×, composites, heartbeat do publicador e dashboard; fonte PDF
+    deduplicada na BD, sem PII ([ADR-023](../../../docs/adr/023-slos-and-burn-rate.md)).
+  - Falta: SLO de email (a flag continua desligada e não há eventos `Delivery` sanitizados), RUM, destinos de
+    alerta no Admin, custo por acordo (precisa de um mês de custos com tags).
 - [~] T8.3 k6 a 3×; restauro de backup com RTO/RPO medidos; failover testado se Multi-AZ for adotado por ADR.
   - Feito: restauro PITR medido em produção, 23 min 42 s e zero perda ([ADR-009](../../../docs/adr/009-rto-rpo.md)).
   - Falta: k6; ensaio do corte (cutover) para a instância restaurada.

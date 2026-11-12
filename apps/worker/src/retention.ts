@@ -7,7 +7,7 @@ import type pg from "pg";
  * cases, proposals, addenda, evidence and dossier requests are kept while the agreement exists, as the Privacy
  * Policy promises, and the application role could not delete them anyway: the database grants refuse. What this
  * removes is the machinery around the record: sessions, replay protection, rate limiting, one-time codes, the
- * outbox and the job ledger. Several of those hold encrypted refresh tokens, encrypted invitation tokens or keyed
+ * outbox, the job ledger and aggregate SLO observations. Several of the earlier tables hold encrypted refresh tokens, encrypted invitation tokens or keyed
  * hashes of IP addresses, so keeping them longer than needed is a risk with no benefit.
  *
  * The windows are correctness bounds, not policy, which is why they live in code rather than in the Admin
@@ -24,6 +24,8 @@ export const RATE_LIMIT_EVENT_DAYS = 2;
  * dead-letter queue before a redrive. The ledger that prevents a second run has to outlast both together.
  */
 export const PROCESSED_JOB_DAYS = 30;
+/** SLO source rows cover a 30-day window plus five days for delayed metric publication and investigation. */
+export const SLO_OBSERVATION_DAYS = 35;
 
 export interface RetentionRule {
   table: string;
@@ -62,6 +64,11 @@ export const RETENTION_RULES: readonly RetentionRule[] = [
     // An unpublished row is pending work and is never touched.
     expired: "published_at IS NOT NULL AND published_at < now() - interval '7 days'",
     why: "a published message: SQS carries it from there, and the row may hold an encrypted token",
+  },
+  {
+    table: "slo_observations",
+    expired: `observed_at < now() - interval '${SLO_OBSERVATION_DAYS} days'`,
+    why: "aggregate SLO source observations, five days after they leave the 30-day reporting window",
   },
   {
     table: "processed_jobs",
