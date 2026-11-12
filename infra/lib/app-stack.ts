@@ -820,15 +820,18 @@ export class AppStack extends cdk.Stack {
       }),
     );
     const burnAnnotations = [
-      { value: 14.4, label: "fast 14.4x", color: "d13212" },
-      { value: 6, label: "slow 6x", color: "ff9900" },
+      { value: 14.4, label: "fast 14.4x", color: "#d13212" },
+      { value: 6, label: "slow 6x", color: "#ff9900" },
     ];
     sloDashboard.addWidgets(
       new cloudwatch.GraphWidget({
         title: "Availability (5-minute minimum; burn-window alarms above are authoritative)",
         left: [availabilityMetric(cdk.Duration.minutes(5), "Minimum")], leftYAxis: { min: 0, max: 1, label: "good" }, width: 12,
       }),
-      new cloudwatch.GraphWidget({ title: "PDF preview burn rate", left: pdfBurnMetrics, leftAnnotations: burnAnnotations, leftYAxis: { min: 0, label: "burn" }, width: 12 }),
+      new cloudwatch.GraphWidget({
+        title: "PDF preview burn rate", left: pdfBurnMetrics, leftAnnotations: burnAnnotations,
+        leftYAxis: { min: 0, label: "burn" }, width: 12,
+      }),
     );
     sloDashboard.addWidgets(
       new cloudwatch.GraphWidget({
