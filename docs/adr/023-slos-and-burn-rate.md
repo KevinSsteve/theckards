@@ -134,6 +134,30 @@ Create `theckards-prod-slos`, with no Logs Insights or high-cardinality dimensio
 - a retained five-minute availability graph, PDF burn gauges, queue and web diagnosis;
 - a text panel explaining why email has no value.
 
+## Production verification
+
+Release `4288386`, 2026-11-12:
+
+- `0015` and `0016` applied before the service update; `slo_cutovers`, `slo_observations` and `rendered_at` exist.
+- The persisted PDF cutover was created at `09:31:05Z` for `09:46:05Z`; 17 older outbox rows and all historical
+  previews are excluded. Observation count and post-cutover PDF count were both zero at verification time.
+- Eight component alarms are `OK` with actions disabled. Both composites are `OK` with one SNS action. The publisher
+  heartbeat alarm is `OK`; eight consecutive minute points were `1`.
+- All five PDF windows publish `-1` and 30-day volume publishes `0`, proving the explicit no-data path.
+- The dashboard has 10 widgets (6 metric, 3 alarm, 1 text), no log query, explicit email/no-data text and valid
+  `#RRGGBB` annotations. Its exact PDF widget passed `GetMetricWidgetImage` before the successful deploy.
+- The deployment guard waited for a heartbeat newer than service stabilization (`09:33:00Z`). No SLO processing or
+  publication error appeared in worker logs. All 15 paging definitions resolve to a runbook.
+
+The first deployment attempt exposed a dashboard validation gap: CDK accepted annotation colours without `#`, while
+CloudWatch rejected widget 7. CloudFormation rolled back before the service image changed. `0015/0016` had already
+expanded the schema and remained compatible with the old image. PR #9 added the prefixes and a regression assertion;
+the live CloudWatch widget validator passed before redeploy.
+
+A real post-cutover PDF observation is deliberately not manufactured: an agreement is append-only and would become a
+permanent production audit record. That final data-path proof waits for ordinary use or explicit approval to create a
+named fixture.
+
 ## Fixed monthly cost
 
 Prices were verified on 2026-11-11 through the AWS Price List API and the official

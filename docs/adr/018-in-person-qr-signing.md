@@ -3,7 +3,10 @@
 Status: Accepted (2026-11-10)
 
 ## Requirement
-Amazon SES denied production access (case 179429657400653), so email invitations, codes and receipts cannot reach arbitrary addresses. Phase 1 is for two people standing next to each other (service contract or sale of goods). The owner asked to drop email and sign in person via QR code.
+At the time of this decision, Amazon SES had denied production access (case 179429657400653), so email invitations,
+codes and receipts could not reach arbitrary addresses. Phase 1 was therefore designed for two people standing next
+to each other. On 2026-11-12 the account API reported production access enabled; the QR path remains an accepted
+product path, and email stays behind its flag until delivery measurement and transactional-flow tests are complete.
 
 ## Decision
 - Feature flag `EMAIL_DELIVERY_ENABLED` (AppConfig/`app_settings.feature_flags`, Admin dashboard), default **false**. While off, every email path (invite, guest OTP, receipt emails) is rejected or skipped.
@@ -19,9 +22,12 @@ Amazon SES denied production access (case 179429657400653), so email invitations
 US$0 (no new AWS service).
 
 ## Simpler alternative
-Show the email-link QR and keep email OTP. Rejected: it needs SES production access. A second option was a typed name only, with no cross-confirmation. Rejected: anyone who photographs the QR could sign from elsewhere. The code shown on the signing device and typed by the creator proves the creator saw the device that signed.
+Show the email-link QR and keep email OTP. Rejected at the time because SES production access was unavailable; it
+remains disabled now because delivery-event measurement and end-to-end message tests are not complete. A second
+option was a typed name only, with no cross-confirmation. Rejected: anyone who photographs the QR could sign from elsewhere. The code shown on the signing device and typed by the creator proves the creator saw the device that signed.
 
 ## Operational risk
 - Counterparties without an account keep only the copy they download during the session. The ESIGN v2 disclosure says so, and paper or email copies are available on request via support@.
 - None of these methods is strong identity verification (the certificate and Terms say so; G3).
-- Re-enabling email later is only the flag plus SES production access; the guest email flow remains in code behind the flag.
+- Enabling email requires more than flipping the flag: sanitized SES `Delivery` measurement and end-to-end tests of
+  invitation, OTP, revision and receipt messages must pass first ([ADR-023](023-slos-and-burn-rate.md)).
