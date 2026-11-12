@@ -50,7 +50,7 @@ If that arrives but alarms do not, the problem is between the alarm and the topi
 the alarm has actions and that they are enabled:
 
 ```sh
-aws cloudwatch describe-alarms --alarm-name-prefix theckards \
+aws cloudwatch describe-alarms --alarm-name-prefix theckards --alarm-types MetricAlarm CompositeAlarm \
   --query '{metric:MetricAlarms[*].{name:AlarmName,state:StateValue,enabled:ActionsEnabled,actions:AlarmActions},composite:CompositeAlarms[*].{name:AlarmName,state:StateValue,enabled:ActionsEnabled,actions:AlarmActions}}' \
   --output json
 ```

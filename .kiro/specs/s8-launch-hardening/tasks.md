@@ -1,13 +1,19 @@
 # S8 — Tarefas
 
-- [ ] T8.1 Domínio, HSTS, SES (DKIM/SPF/DMARC), pedido de saída do sandbox, supressão de bounces.
+- [x] T8.1 Domínio, HSTS, SES (DKIM/SPF/DMARC), pedido de saída do sandbox, supressão de bounces.
+  - Verificado em produção em 2026-11-12: SES `ProductionAccessEnabled` e `SendingEnabled`, enforcement saudável,
+    identidade verificada, DKIM `SUCCESS` (3/3 CNAME), custom MAIL FROM `SUCCESS`, SPF e DMARC publicados, TLS
+    obrigatório e supressão account/config-set para bounce + complaint. Alarmes de reputação `OK`. A flag da app
+    continua desligada até o SLO de entrega e os testes transacionais estarem completos.
 - [~] T8.2 Canary, RUM, SLOs, alarmes e runbooks essenciais; destinos de alerta configuráveis; painel de custo por acordo.
   - Feito: os 10 alarmes passam a chegar a uma pessoa (o tópico não tinha subscritores); verificação externa de
     disponibilidade com Route 53 em vez de canary Synthetics ([ADR-021](../../../docs/adr/021-external-availability-check.md));
     tags em todos os recursos e orçamento de uso bruto a US$200 ([ADR-022](../../../docs/adr/022-cost-attribution-and-budget.md)).
   - Feito (R-OPS-2, parcial): SLO de disponibilidade 99,9% e de preview PDF <10 s em 99%, ambos com
     janelas 5m/1h a 14,4× e 30m/6h a 6×, composites, heartbeat do publicador e dashboard; fonte PDF
-    deduplicada na BD, sem PII ([ADR-023](../../../docs/adr/023-slos-and-burn-rate.md)).
+    deduplicada na BD, sem PII, verificados em produção na release `4288386`: oito filhos `OK` sem ações, dois
+    composites `OK` com SNS, dashboard de 10 widgets, gauges no-data `-1` e heartbeat contínuo
+    ([ADR-023](../../../docs/adr/023-slos-and-burn-rate.md)).
   - Falta: SLO de email (a flag continua desligada e não há eventos `Delivery` sanitizados), RUM, destinos de
     alerta no Admin, custo por acordo (precisa de um mês de custos com tags).
 - [~] T8.3 k6 a 3×; restauro de backup com RTO/RPO medidos; failover testado se Multi-AZ for adotado por ADR.
@@ -27,7 +33,7 @@
 - [ ] T8.5 Gate de build contra RASCUNHO; aprovação dos textos pelo dono no Admin → Legal.
 - [~] T8.6 Retention sweeper; denúncias/suspensão; revisão Bedrock (retenção/treino) refletida na Privacy Policy.
   - Feito: sweeper no worker (`apps/worker/src/retention.ts`), só sobre dados operacionais (sessões, chaves de
-    idempotência, eventos de rate limit, OTP, outbox publicada, ledger de jobs); nunca sobre o registo, e os grants
+    idempotência, eventos de rate limit, OTP, outbox publicada, ledger de jobs e observações SLO agregadas); nunca sobre o registo, e os grants
     da BD impedem-no mesmo que tentasse. Janelas presas por testes ao código de que dependem. Alarme + runbook.
   - Falta: denúncias/suspensão (S11 T11.7); revisão Bedrock (bloqueada: sem acordo de modelo na conta).
 - [ ] T8.7 `docs/launch-checklist.md` com evidências; go-live.
